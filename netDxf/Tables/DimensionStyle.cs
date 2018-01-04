@@ -124,6 +124,8 @@ namespace netDxf.Tables
         private double dimscale;
         private short dimtih;
         private short dimtoh;
+        private short dimtmove;
+        private short dimtofl;
 
         // primary units
         private short dimadec;
@@ -216,6 +218,8 @@ namespace netDxf.Tables
 
             // fit
             this.dimscale = 1.0;
+            this.dimtmove = 0;
+            this.dimtofl = 0;
 
             // primary units
             this.dimdec = 2;
@@ -646,7 +650,7 @@ namespace netDxf.Tables
             set { this.dimtih = value; }
         }
 
-        /// <summary>
+              /// <summary>
         /// Controls the position of dimension text outside the extension lines.
         /// </summary>
         /// <remarks>
@@ -657,6 +661,33 @@ namespace netDxf.Tables
         {
             get { return this.dimtoh; }
             set { this.dimtoh = value; }
+        }
+
+        /// <summary>
+        /// Sets dimension text movement rules.
+        /// </summary>
+        /// <remarks>
+        /// 0 - Moves the dimension line with dimension text
+        /// 1 - Adds a leader when dimension text is moved
+        /// 2 - Allows text to be moved freely without a leader
+        /// </remarks>
+        public short DIMTMOVE
+        {
+            get { return this.dimtmove; }
+            set { this.dimtmove = value; }
+        }
+
+        /// <summary>
+        /// Controls whether a dimension line is drawn between the extension lines even when the text is placed outside.
+        /// </summary>
+        /// <remarks>
+        /// 0 - Does not draw dimension lines between the measured points when arrowheads are placed outside the measured points
+        /// 1 - Draws dimension lines between the measured points even when arrowheads are placed outside the measured points
+        /// </remarks>
+        public short DIMTOFL
+        {
+            get { return this.dimtofl; }
+            set { this.dimtofl = value; }
         }
 
         #endregion
@@ -873,8 +904,8 @@ namespace netDxf.Tables
             get { return this.dimrnd; }
             set
             {
-                if (value < 0.000001 && !MathHelper.IsZero(value, double.Epsilon))
-                    throw new ArgumentOutOfRangeException(nameof(value), value, "The nearest value to round all distances must be equal or greater than 0.000001 or zero (no rounding off).");
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "The nearest value to round all distances must be equals or greater than zero.");
                 this.dimrnd = value;
             }
         }
@@ -904,17 +935,17 @@ namespace netDxf.Tables
             DimensionStyle copy = new DimensionStyle(newName)
             {
                 // dimension lines
-                DimLineColor = (AciColor) this.dimclrd.Clone(),
-                DimLineLinetype = (Linetype) this.dimltype.Clone(),
+                DimLineColor = (AciColor)this.dimclrd.Clone(),
+                DimLineLinetype = (Linetype)this.dimltype.Clone(),
                 DimLineLineweight = this.dimlwd,
                 DimLineOff = this.dimsd,
                 DimBaselineSpacing = this.dimdli,
                 DimLineExtend = this.dimdle,
 
                 // extension lines
-                ExtLineColor = (AciColor) this.dimclre.Clone(),
-                ExtLine1Linetype = (Linetype) this.dimltex1.Clone(),
-                ExtLine2Linetype = (Linetype) this.dimltex2.Clone(),
+                ExtLineColor = (AciColor)this.dimclre.Clone(),
+                ExtLine1Linetype = (Linetype)this.dimltex1.Clone(),
+                ExtLine2Linetype = (Linetype)this.dimltex2.Clone(),
                 ExtLineLineweight = this.dimlwe,
                 ExtLine1Off = this.dimse1,
                 ExtLine2Off = this.dimse2,
@@ -930,6 +961,8 @@ namespace netDxf.Tables
                 DimScaleOverall = this.dimscale,
                 DIMTIH = this.dimtih,
                 DIMTOH = this.dimtoh,
+                DIMTMOVE = this.dimtmove,
+                DIMTOFL = this.dimtofl,
 
                 // text appearance
                 TextStyle = (TextStyle) this.dimtxsty.Clone(),

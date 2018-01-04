@@ -171,10 +171,10 @@ namespace netDxf.Entities
             return texts;
         }
 
-        private static Line DimensionLine(Vector2 start, Vector2 end, double rotation, DimensionStyle style)
+        private static Line DimensionLine(Vector2 start, Vector2 end, double rotation, DimensionStyle style, Boolean arrowsoutside)
         {
-            double ext1 = style.ArrowSize*style.DimScaleOverall;
-            double ext2 = -style.ArrowSize*style.DimScaleOverall;
+            double ext1 = (arrowsoutside ? -2 : 1) * style.ArrowSize*style.DimScaleOverall;
+            double ext2 = (arrowsoutside ? -2 : 1) * -style.ArrowSize*style.DimScaleOverall;
 
             Block block;
 
@@ -186,7 +186,7 @@ namespace netDxf.Entities
                     block.Name.Equals("_ARCHTICK", StringComparison.OrdinalIgnoreCase) ||
                     block.Name.Equals("_INTEGRAL", StringComparison.OrdinalIgnoreCase) ||
                     block.Name.Equals("_NONE", StringComparison.OrdinalIgnoreCase))
-                    ext1 = -style.DimLineExtend*style.DimScaleOverall;
+                    ext1 = (arrowsoutside ? -2 : 1) * -style.DimLineExtend*style.DimScaleOverall;
             }
 
             //end arrow
@@ -197,7 +197,7 @@ namespace netDxf.Entities
                     block.Name.Equals("_ARCHTICK", StringComparison.OrdinalIgnoreCase) ||
                     block.Name.Equals("_INTEGRAL", StringComparison.OrdinalIgnoreCase) ||
                     block.Name.Equals("_NONE", StringComparison.OrdinalIgnoreCase))
-                    ext2 = style.DimLineExtend*style.DimScaleOverall;
+                    ext2 = (arrowsoutside ? -2 : 1) * style.DimLineExtend*style.DimScaleOverall;
             }
 
             start = Vector2.Polar(start, ext1, rotation);
@@ -624,19 +624,24 @@ namespace netDxf.Entities
 
             if (!style.DimLineOff)
             {
-                // dimension line
-                entities.Add(DimensionLine(dimRef1, dimRef2, dimRotation, style));
+                //We'll need to set if the arrowheads are outside.
+                Boolean outside = Vector2.Distance(dimRef1, dimRef2) < style.ArrowSize * 3 * style.DimScaleOverall;
+
+                // dimension line - ALWAYS DRAWN INITIALLY (we may want to update later)
+                entities.Add(DimensionLine(dimRef1, dimRef2, dimRotation, style, outside));
+         
 
                 // dimension arrowheads
+                double ExtraRotate = outside ? MathHelper.PI  : 0;
                 if (reversed)
                 {
-                    entities.Add(StartArrowHead(dimRef2, dimRotation, style));
-                    entities.Add(EndArrowHead(dimRef1, dimRotation + MathHelper.PI, style));
+                    entities.Add(StartArrowHead(dimRef2, dimRotation + ExtraRotate, style));
+                    entities.Add(EndArrowHead(dimRef1, dimRotation + MathHelper.PI + ExtraRotate, style));
                 }
                 else
                 {
-                    entities.Add(StartArrowHead(dimRef1, dimRotation + MathHelper.PI, style));
-                    entities.Add(EndArrowHead(dimRef2, dimRotation, style));
+                    entities.Add(StartArrowHead(dimRef1, dimRotation + MathHelper.PI + ExtraRotate, style));
+                    entities.Add(EndArrowHead(dimRef2, dimRotation + ExtraRotate, style));
                 }
             }
 
@@ -664,11 +669,22 @@ namespace netDxf.Entities
             if (textRot > MathHelper.HalfPI && textRot <= MathHelper.ThreeHalfPI)
                 textRot += MathHelper.PI;
 
+            //We'll now get the string that we'll want to use, as we'll need to see how the text fits.
             List<string> texts = FormatDimensionText(measure, dim.DimensionType, dim.UserText, style, dim.Owner);
 
-            MText mText = DimensionText(Vector2.Polar(midDim, style.TextOffset*style.DimScaleOverall, textRot + MathHelper.HalfPI), MTextAttachmentPoint.BottomCenter, textRot, texts[0], style);
-            if (mText != null)
-                entities.Add(mText);
+            //We will draw text differently based on if it is outside or not.
+            Boolean forcetextout = ((perpDimRef.X == 1) || (perpDimRef.Y == -1)) &&
+                                   Vector2.Distance(dimRef1, dimRef2) < style.ArrowSize * 5 * style.DimScaleOverall;
+            if (forcetextout)
+            {
+                MText mText = DimensionText(Vector2.Polar(midDim, -style.TextOffset * style.DimScaleOverall, textRot + MathHelper.HalfPI), MTextAttachmentPoint.TopCenter, textRot, texts[0], style);
+                if (mText != null) entities.Add(mText);
+            }
+            else
+            {
+                MText mText = DimensionText(Vector2.Polar(midDim, style.TextOffset * style.DimScaleOverall, textRot + MathHelper.HalfPI), MTextAttachmentPoint.BottomCenter, textRot, texts[0], style);
+                if (mText != null) entities.Add(mText);
+            }
 
             // there might be an additional text if the code \X has been used in the dimension UserText 
             // this additional text appears under the dimension line
@@ -724,7 +740,7 @@ namespace netDxf.Entities
             if (!style.DimLineOff)
             {
                 // dimension lines
-                entities.Add(DimensionLine(dimRef1, dimRef2, refAngle, style));
+                entities.Add(DimensionLine(dimRef1, dimRef2, refAngle, style, false));
                 // dimension arrowheads
                 if (reversed)
                 {

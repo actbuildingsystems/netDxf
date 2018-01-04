@@ -70,9 +70,6 @@ namespace netDxf.IO
             if (this.doc.DrawingVariables.AcadVer < DxfVersion.AutoCad2000)
                 throw new NotSupportedException("Only AutoCad2000 and newer dxf versions are supported.");
 
-            if (!Vector3.ArePerpendicular(this.doc.DrawingVariables.UcsXDir, this.doc.DrawingVariables.UcsYDir))
-                throw new ArithmeticException("The drawing variables vectors UcsXDir and UcsYDir must be perpendicular.");
-
             this.encodedStrings = new Dictionary<string, string>();
 
             // create the default PaperSpace layout in case it does not exist. The ModelSpace layout always exists
@@ -270,6 +267,10 @@ namespace netDxf.IO
 
             //view
             this.BeginTable(this.doc.Views.CodeName, (short) this.doc.Views.Count, this.doc.Views.Handle);
+            foreach (View v in this.doc.Views)
+            {
+                this.WriteView(v);
+            }
             this.EndTable();
 
             //UCS
@@ -392,6 +393,7 @@ namespace netDxf.IO
 
             this.Close();
 
+            stream.Position = 0;
         }
 
         #endregion
@@ -645,27 +647,6 @@ namespace netDxf.IO
                     this.chunk.Write(9, name);
                     this.chunk.Write(40, ((TimeSpan) value).TotalDays);
                     break;
-                case HeaderVariableCode.UcsOrg:
-                    this.chunk.Write(9, name);
-                    Vector3 org = (Vector3)value;
-                    this.chunk.Write(10, org.X);
-                    this.chunk.Write(20, org.Y);
-                    this.chunk.Write(30, org.Z);
-                    break;
-                case HeaderVariableCode.UcsXDir:
-                    this.chunk.Write(9, name);
-                    Vector3 xdir = (Vector3)value;
-                    this.chunk.Write(10, xdir.X);
-                    this.chunk.Write(20, xdir.Y);
-                    this.chunk.Write(30, xdir.Z);
-                    break;
-                case HeaderVariableCode.UcsYDir:
-                    this.chunk.Write(9, name);
-                    Vector3 ydir = (Vector3)value;
-                    this.chunk.Write(10, ydir.X);
-                    this.chunk.Write(20, ydir.Y);
-                    this.chunk.Write(30, ydir.Z);
-                    break;
             }
         }
 
@@ -834,6 +815,12 @@ namespace netDxf.IO
 
             this.chunk.Write(9, "$DIMTOH");
             this.chunk.Write(70, style.DIMTOH);
+
+            this.chunk.Write(9, "$DIMTMOVE");
+            this.chunk.Write(70, style.DIMTMOVE);
+
+            this.chunk.Write(9, "$DIMTOFL");
+            this.chunk.Write(70, style.DIMTOFL);
 
             this.chunk.Write(9, "$DIMTXT");
             this.chunk.Write(40, style.TextHeight);
@@ -1019,6 +1006,50 @@ namespace netDxf.IO
         }
 
         /// <summary>
+        /// Writes a new view to the table section.
+        /// </summary>
+        /// <param name="v">view.</param>
+        private void WriteView(View v)
+        {
+            Debug.Assert(this.activeTable == DxfObjectCode.ViewTable );
+
+            this.chunk.Write(0, v.CodeName);
+            this.chunk.Write(5, v.Handle);
+            this.chunk.Write(330, v.Owner.Handle);
+
+            this.chunk.Write(100, SubclassMarker.TableRecord);
+
+            this.chunk.Write(100, SubclassMarker.View);
+
+            this.chunk.Write(2, this.EncodeNonAsciiCharacters(v.Name));
+
+            this.chunk.Write(70, (short)0);
+
+            this.chunk.Write(40, v.Height ); //Height
+            this.chunk.Write(10, v.Target.X ); //center X
+            this.chunk.Write(20, v.Target.Y); //center Y
+            this.chunk.Write(41, v.Width ); //Width
+
+            this.chunk.Write(11, 0.0); //View Direction X
+            this.chunk.Write(21, 0.0); //Y
+            this.chunk.Write(31, 1.0); //Z
+
+            this.chunk.Write(12, 0.0); //Target Point, X, Y, Z, assume this always stays 0.0
+            this.chunk.Write(22, 0.0);
+            this.chunk.Write(32, 0.0);
+
+            this.chunk.Write(42, 50.0); //Lens Lengths
+            this.chunk.Write(43, 0.0); //Back Clipping
+            this.chunk.Write(44, 0.0); //Front Clipping
+            this.chunk.Write(50, 0.0); //Twist Angle
+
+            this.chunk.Write(71, (short)0);  //VIEWMODE
+            this.chunk.Write(281, (short)0);  //RENDER MODE
+            this.chunk.Write(72, (short)0);  //1 if there is a USC associated.
+
+        }
+
+        /// <summary>
         /// Writes a new dimension style to the table section.
         /// </summary>
         /// <param name="style">DimensionStyle.</param>
@@ -1097,6 +1128,7 @@ namespace netDxf.IO
             this.chunk.Write(141, style.CenterMarkSize);
             this.chunk.Write(144, style.DimScaleLinear);
             this.chunk.Write(147, style.TextOffset);
+            this.chunk.Write(172, (short)style.DIMTOFL);
             this.chunk.Write(176, style.DimLineColor.Index);
             this.chunk.Write(177, style.ExtLineColor.Index);
             this.chunk.Write(178, style.TextColor.Index);
@@ -1106,6 +1138,7 @@ namespace netDxf.IO
             this.chunk.Write(276, (short) style.FractionalType);
             this.chunk.Write(277, (short) style.DimLengthUnits);
             this.chunk.Write(278, (short) style.DecimalSeparator);
+            this.chunk.Write(279, (short) style.DIMTMOVE ); 
             this.chunk.Write(280, style.DIMJUST);
             if (style.DimLineOff)
             {
@@ -2631,9 +2664,8 @@ namespace netDxf.IO
 
             this.chunk.Write(71, (short) mText.AttachmentPoint);
 
-            this.chunk.Write(72, (short) mText.DrawingDirection);
-
-            this.chunk.Write(73, (short) mText.LineSpacingStyle);
+            // By style (the flow direction is inherited from the associated text style)
+            this.chunk.Write(72, (short) 5);
 
             this.chunk.Write(7, this.EncodeNonAsciiCharacters(mText.Style.Name));
 
