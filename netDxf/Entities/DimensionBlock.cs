@@ -591,6 +591,7 @@ namespace netDxf.Entities
         public static Block Build(LinearDimension dim, string name)
         {
             double measure = dim.Measurement;
+            measure = Math.Round(measure, dim.Style.LengthPrecision);
             bool reversed = false;
             DimensionStyle style = BuildDimensionStyleOverride(dim);
             List<EntityObject> entities = new List<EntityObject>();
@@ -670,7 +671,7 @@ namespace netDxf.Entities
                 textRot += MathHelper.PI;
 
             //We'll now get the string that we'll want to use, as we'll need to see how the text fits.
-            List<string> texts = FormatDimensionText(measure, dim.DimensionType, dim.UserText, style, dim.Owner);
+            List<string> texts = FormatDimensionText(measure, dim.DimensionType, dim.UserText, style, dim.Owner); 
 
             //We will draw text differently based on if it is outside or not.
             Boolean forcetextout = ((perpDimRef.X == 1) || (perpDimRef.Y == -1)) &&
