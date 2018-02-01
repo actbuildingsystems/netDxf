@@ -129,7 +129,7 @@ namespace netDxf.Units
                         return string.Format("{0}" + format.InchesSymbol, inches);
                     return string.Format("0" + format.FeetSymbol + format.FeetInchesSeparator + "{0}" + format.InchesSymbol, inches);
                 }
-                return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "{0}" + format.InchesSymbol, feet, inches);
+                return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "{1}" + format.InchesSymbol, feet, inches);
             }
 
             string text = string.Empty;
