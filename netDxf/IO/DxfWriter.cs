@@ -1130,6 +1130,7 @@ namespace netDxf.IO
             this.chunk.Write(140, style.TextHeight);
             this.chunk.Write(141, style.CenterMarkSize);
             this.chunk.Write(144, style.DimScaleLinear);
+            this.chunk.Write(146, style.FractionalHeightScale);
             this.chunk.Write(147, style.TextOffset);
             this.chunk.Write(172, (short)style.DIMTOFL);
             this.chunk.Write(176, style.DimLineColor.Index);
