@@ -51,6 +51,7 @@ namespace netDxf.Entities
                 AngularDecimalPlaces = style.AngularPrecision == -1 ? style.LengthPrecision : style.AngularPrecision,
                 DecimalSeparator = style.DecimalSeparator.ToString(),
                 FractionType = style.FractionalType,
+                FractionalHeightScale = style.FractionalHeightScale,
                 SupressLinearLeadingZeros = style.SuppressLinearLeadingZeros,
                 SupressLinearTrailingZeros = style.SuppressLinearTrailingZeros,
                 SupressAngularLeadingZeros = style.SuppressAngularLeadingZeros,

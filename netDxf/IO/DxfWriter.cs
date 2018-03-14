@@ -756,6 +756,9 @@ namespace netDxf.IO
             this.chunk.Write(9, "$DIMEXO");
             this.chunk.Write(40, style.ExtLineOffset);
 
+            this.chunk.Write(9, "$DIMFAC");
+            this.chunk.Write(40, style.FractionalHeightScale);
+
             this.chunk.Write(9, "$DIMGAP");
             this.chunk.Write(40, style.TextOffset);
 

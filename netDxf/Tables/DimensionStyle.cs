@@ -137,6 +137,7 @@ namespace netDxf.Tables
         private LinearUnitType dimlunit;
         private AngleUnitType dimaunit;
         private FractionFormatType dimfrac;
+        private double dimfracheightscale;
         private bool suppressLinearLeadingZeros;
         private bool suppressLinearTrailingZeros;
         private bool suppressAngularLeadingZeros;
@@ -233,6 +234,7 @@ namespace netDxf.Tables
             this.dimaunit = AngleUnitType.DecimalDegrees;
             this.dimlunit = LinearUnitType.Decimal;
             this.dimfrac = FractionFormatType.Horizontal;
+            this.dimfracheightscale = 1.0;
             this.suppressLinearLeadingZeros = false;
             this.suppressLinearTrailingZeros = false;
             this.suppressAngularLeadingZeros = false;
@@ -827,6 +829,20 @@ namespace netDxf.Tables
         {
             get { return this.dimfrac; }
             set { this.dimfrac = value; }
+        }
+
+        /// <summary>
+        /// Gets or sets the fractional height scale
+        /// </summary>
+        /// <remarks>
+        /// Horizontal stacking<br/>
+        /// Diagonal stacking<br/>
+        /// Not stacked (for example, 1/2)
+        /// </remarks>
+        public Double FractionalHeightScale
+        {
+            get { return this.dimfracheightscale; }
+            set { this.dimfracheightscale = value; }
         }
 
         /// <summary>

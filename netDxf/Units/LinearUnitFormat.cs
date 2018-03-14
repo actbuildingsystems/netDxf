@@ -139,10 +139,10 @@ namespace netDxf.Units
             switch (format.FractionType)
             {
                 case FractionFormatType.Diagonal:
-                    text = "\\A1;" + feetStr + inches + "{\\H1.0x;\\S" + numerator + "#" + denominator + ";}" + format.InchesSymbol;
+                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "#" + denominator + ";}" + format.InchesSymbol;
                     break;
                 case FractionFormatType.Horizontal:
-                    text = "\\A1;" + feetStr + inches + "{\\H1.0x;\\S" + numerator + "/" + denominator + ";}" + format.InchesSymbol;
+                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "/" + denominator + ";}" + format.InchesSymbol;
                     break;
                 case FractionFormatType.NotStacked:
                     text = feetStr + inches + " " + numerator + "/" + denominator + format.InchesSymbol;
@@ -215,10 +215,10 @@ namespace netDxf.Units
             switch (format.FractionType)
             {
                 case FractionFormatType.Diagonal:
-                    text = "\\A1;" + num + "{\\H1.0x;\\S" + numerator + "#" + denominator + ";}";
+                    text = "\\A1;" + num + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "#" + denominator + ";}";
                     break;
                 case FractionFormatType.Horizontal:
-                    text = "\\A1;" + num + "{\\H1.0x;\\S" + numerator + "/" + denominator + ";}";
+                    text = "\\A1;" + num + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "/" + denominator + ";}";
                     break;
                 case FractionFormatType.NotStacked:
                     text = num + " " + numerator + "/" + denominator;

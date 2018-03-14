@@ -43,6 +43,7 @@ namespace netDxf.Units
         private string feetSymbol;
         private string inchesSymbol;
         private FractionFormatType fractionType;
+        private double fractionalHeightScale;
         private bool supressLinearLeadingZeros;
         private bool supressLinearTrailingZeros;
         private bool supressAngularLeadingZeros;
@@ -71,6 +72,7 @@ namespace netDxf.Units
             this.feetSymbol = "\'";
             this.inchesSymbol = "\"";
             this.fractionType = FractionFormatType.Horizontal;
+            this.fractionalHeightScale = 1;
             this.supressLinearLeadingZeros = false;
             this.supressLinearTrailingZeros = false;
             this.supressAngularLeadingZeros = false;
@@ -207,6 +209,20 @@ namespace netDxf.Units
         {
             get { return this.fractionType; }
             set { this.fractionType = value; }
+        }
+
+        /// <summary>
+        /// Gets or sets the fractional height scale
+        /// </summary>
+        /// <remarks>
+        /// Horizontal stacking<br/>
+        /// Diagonal stacking<br/>
+        /// Not stacked (for example, 1/2)
+        /// </remarks>
+        public Double FractionalHeightScale
+        {
+            get { return this.fractionalHeightScale; }
+            set { this.fractionalHeightScale = value; }
         }
 
         /// <summary>
