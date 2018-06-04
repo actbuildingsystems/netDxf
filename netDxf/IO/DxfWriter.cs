@@ -2662,9 +2662,18 @@ namespace netDxf.IO
             this.chunk.Write(40, mText.Height);
             this.chunk.Write(41, mText.RectangleWidth);
             this.chunk.Write(44, mText.LineSpacingFactor);
-
+           
             // even if the AutoCAD dxf documentation says that the rotation is in radians, this is wrong this value must be saved in degrees
             this.chunk.Write(50, mText.Rotation);
+
+            this.chunk.Write(73, (short)mText.LineSpacingStyle);
+            short temp = (short)mText.LineSpacingStyle;
+            if (temp == 2)
+            {
+                this.chunk.Write(73, (short)mText.LineSpacingStyle);
+            }
+
+
 
             this.chunk.Write(71, (short) mText.AttachmentPoint);
 
