@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -41,7 +41,10 @@ namespace netDxf.Entities
         {
             List<string> texts = new List<string>();
             if (userText == " ")
+            {
+                texts.Add(string.Empty);
                 return texts;
+            }
 
             string dimText = string.Empty;
 
@@ -703,7 +706,7 @@ namespace netDxf.Entities
             dim.MidTextPoint = new Vector3(midDim.X, midDim.Y, dim.Elevation); // this value is in OCS
 
             // drawing block
-            return new Block(name, false, entities, null) {Flags = BlockTypeFlags.AnonymousBlock};
+            return new Block(name, entities, null, false) {Flags = BlockTypeFlags.AnonymousBlock};
         }
 
         public static Block Build(AlignedDimension dim, string name)
@@ -793,7 +796,7 @@ namespace netDxf.Entities
             dim.MidTextPoint = new Vector3(midDim.X, midDim.Y, dim.Elevation); // this value is in OCS
 
             // drawing block
-            return new Block(name, false, entities, null) {Flags = BlockTypeFlags.AnonymousBlock};
+            return new Block(name, entities, null, false) {Flags = BlockTypeFlags.AnonymousBlock};
         }
 
         public static Block Build(Angular2LineDimension dim, string name)
@@ -943,7 +946,7 @@ namespace netDxf.Entities
             dim.ArcDefinitionPoint = dim.MidTextPoint; // this value is in OCS
 
             // drawing block
-            return new Block(name, false, entities, null) {Flags = BlockTypeFlags.AnonymousBlock};
+            return new Block(name, entities, null, false) {Flags = BlockTypeFlags.AnonymousBlock};
         }
 
         public static Block Build(Angular3PointDimension dim, string name)
@@ -1053,7 +1056,7 @@ namespace netDxf.Entities
             dim.MidTextPoint = new Vector3(midDim.X, midDim.Y, dim.Elevation); // this value is in OCS
 
             // drawing block
-            return new Block(name, false, entities, null);
+            return new Block(name, entities, null, false);
         }
 
         public static Block Build(DiametricDimension dim, string name)
@@ -1129,7 +1132,7 @@ namespace netDxf.Entities
             dim.DefinitionPoint = MathHelper.Transform(new Vector3(ref2.X, ref2.Y, dim.Elevation), dim.Normal, CoordinateSystem.Object, CoordinateSystem.World);
             dim.MidTextPoint = new Vector3(dimRef.X, dimRef.Y, dim.Elevation); // this value is in OCS
 
-            return new Block(name, false, entities, null);
+            return new Block(name, entities, null, false);
         }
 
         public static Block Build(RadialDimension dim, string name)
@@ -1204,7 +1207,7 @@ namespace netDxf.Entities
             dim.DefinitionPoint = MathHelper.Transform(new Vector3(centerRef.X, centerRef.Y, dim.Elevation), dim.Normal, CoordinateSystem.Object, CoordinateSystem.World);
             dim.MidTextPoint = new Vector3(dimRef.X, dimRef.Y, dim.Elevation); // this value is in OCS
 
-            return new Block(name, false, entities, null);
+            return new Block(name, entities, null, false);
         }
 
         public static Block Build(OrdinateDimension dim, string name)
@@ -1264,7 +1267,7 @@ namespace netDxf.Entities
             dim.MidTextPoint = new Vector3(midText.X, midText.Y, dim.Elevation); // this value is in OCS
 
             // drawing block
-            return new Block(name, false, entities, null);
+            return new Block(name, entities, null, false);
         }
 
         #endregion
