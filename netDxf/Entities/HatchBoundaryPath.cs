@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -540,7 +540,7 @@ namespace netDxf.Entities
                         throw new ArgumentException("Closed polylines cannot be combined with other entities to make a hatch boundary path.");
 
                 // it seems that AutoCad does not have problems on creating loops that theoretically does not make sense, like, for example an internal loop that is made of a single arc.
-                // so if AutoCAD is ok with that I am too, the program that make use of this information will take care of this inconsistencies
+                // so if AutoCAD is OK with that I am too, the program that make use of this information will take care of this inconsistencies
                 switch (entity.Type)
                 {
                     case EntityType.Arc:
@@ -597,15 +597,24 @@ namespace netDxf.Entities
         /// <returns>A new HatchBoundaryPath that is a copy of this instance.</returns>
         public object Clone()
         {
-            List<Edge> copyEdges = new List<Edge>();
-            foreach (Edge edge in this.edges)
-                copyEdges.Add((Edge) edge.Clone());
+            HatchBoundaryPath copy;
 
-            HatchBoundaryPath copy = new HatchBoundaryPath(copyEdges)
+            //// the hatch is associative
+            if (this.contour.Count > 0)
             {
-                pathType = this.pathType
-            };
-
+                List<EntityObject> copyContour = new List<EntityObject>();
+                foreach (EntityObject entity in this.contour)
+                    copyContour.Add((EntityObject)entity.Clone());
+                copy = new HatchBoundaryPath(copyContour);
+            }
+            else
+            {
+                List<Edge> copyEdges = new List<Edge>();
+                foreach (Edge edge in this.edges)
+                    copyEdges.Add((Edge) edge.Clone());
+                copy = new HatchBoundaryPath(copyEdges);
+            }
+            copy.PathType = this.pathType;
             return copy;
         }
 

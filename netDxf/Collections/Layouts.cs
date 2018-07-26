@@ -51,11 +51,47 @@ namespace netDxf.Collections
             : base(document, DxfObjectCode.LayoutDictionary, handle)
         {
             this.MaxCapacity = short.MaxValue;
+            this.references = null;
         }
 
         #endregion
 
         #region override methods
+
+        /// <summary>
+        /// Gets the <see cref="DxfObject">dxf objects</see> referenced by a T.
+        /// </summary>
+        /// <param name="name">Table object name.</param>
+        /// <returns>The list of DxfObjects that reference the specified table object.</returns>
+        /// <remarks>
+        /// If there is no table object with the specified name in the list the method an empty list.<br />
+        /// The Groups collection method GetReferences will always return an empty list since there are no DxfObjects that references them.
+        /// </remarks>
+        public new List<DxfObject> GetReferences(string name)
+        {
+            if (!this.Contains(name))
+                return new List<DxfObject>();
+            return this.GetReferences(this[name]);
+        }
+
+        /// <summary>
+        /// Gets the <see cref="DxfObject">dxf objects</see> referenced by a T.
+        /// </summary>
+        /// <param name="item">Table object.</param>
+        /// <returns>The list of DxfObjects that reference the specified table object.</returns>
+        /// <remarks>
+        /// If there is no table object with the specified name in the list the method an empty list.<br />
+        /// The Groups collection method GetReferences will always return an empty list since there are no DxfObjects that references them.
+        /// </remarks>
+        public new List<DxfObject> GetReferences(Layout item)
+        {
+            if (item == null)
+                throw new ArgumentNullException(nameof(item));
+            List<DxfObject> refs = new List<DxfObject>();
+            refs.AddRange(item.AssociatedBlock.Entities);
+            refs.AddRange(item.AssociatedBlock.AttributeDefinitions.Values);
+            return refs;
+        }
 
         /// <summary>
         /// Adds a layout to the list.
@@ -103,12 +139,11 @@ namespace netDxf.Collections
             if (assignHandle || string.IsNullOrEmpty(layout.Handle))
                 this.Owner.NumHandles = layout.AsignHandle(this.Owner.NumHandles);
 
-            this.Owner.AddedObjects.Add(layout.Handle, layout);
-
             this.list.Add(layout.Name, layout);
-            this.references.Add(layout.Name, new List<DxfObject>());
 
             layout.NameChanged += this.Item_NameChanged;
+
+            this.Owner.AddedObjects.Add(layout.Handle, layout);
 
             return layout;
         }

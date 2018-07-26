@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -91,15 +91,16 @@ namespace netDxf.Units
                 if (feet == 0)
                 {
                     if (format.SupressZeroFeet)
-                        return "0" + format.InchesSymbol;
+                        return string.Format("0{0}", format.InchesSymbol);
                     if (format.SupressZeroInches)
-                        return "0" + format.FeetSymbol;
-                    return "0" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol;
+                        return string.Format("0{0}", format.FeetSymbol);
+
+                    return string.Format("0{0}{1}0{2}", format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
                 }
                 if (format.SupressZeroInches)
-                    return string.Format("{0}" + format.FeetSymbol, feet);
+                    return string.Format("{0}{1}", feet, format.FeetSymbol);
 
-                return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol, feet);
+                return string.Format("{0}{1}{2}0{3}", feet, format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
             }
 
             int numerator;
@@ -113,36 +114,41 @@ namespace netDxf.Units
                     if (feet == 0)
                     {
                         if (format.SupressZeroFeet)
-                            return "0" + format.InchesSymbol;
+                            return string.Format("0{0}", format.InchesSymbol);
                         if (format.SupressZeroInches)
-                            return "0" + format.FeetSymbol;
-                        return "0" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol;
+                            return string.Format("0{0}", format.FeetSymbol);
+
+                        return string.Format("0{0}{1}0{2}", format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
                     }
                     if (format.SupressZeroInches)
-                        return string.Format("{0}" + format.FeetSymbol, feet);
+                        return string.Format("{0}{1}", feet, format.FeetSymbol);
 
-                    return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol, feet);
+                    return string.Format("{0}{1}{2}0{3}", feet, format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
                 }
                 if (feet == 0)
                 {
                     if (format.SupressZeroFeet)
-                        return string.Format("{0}" + format.InchesSymbol, inches);
-                    return string.Format("0" + format.FeetSymbol + format.FeetInchesSeparator + "{0}" + format.InchesSymbol, inches);
+                        return string.Format("{0}{1}", inches, format.InchesSymbol );
+
+                    return string.Format("0{0}{1}{2}{3}", format.FeetSymbol, format.FeetInchesSeparator, inches, format.InchesSymbol);
                 }
-                return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "{1}" + format.InchesSymbol, feet, inches);
+
+                return string.Format("{0}{1}{2}{3}{4}", feet, format.FeetSymbol, format.FeetInchesSeparator, inches, format.InchesSymbol);
             }
 
             string text = string.Empty;
-            string feetStr = feet + format.FeetSymbol + format.FeetInchesSeparator;
+            string feetStr;
             if (format.SupressZeroFeet && feet == 0)
                 feetStr = string.Empty;
+            else
+                feetStr = feet + format.FeetSymbol + format.FeetInchesSeparator;
             switch (format.FractionType)
             {
                 case FractionFormatType.Diagonal:
-                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "#" + denominator + ";}" + format.InchesSymbol;
+                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionHeightScale + "x;\\S" + numerator + "#" + denominator + ";}" + format.InchesSymbol;
                     break;
                 case FractionFormatType.Horizontal:
-                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "/" + denominator + ";}" + format.InchesSymbol;
+                    text = "\\A1;" + feetStr + inches + "{\\H" + format.FractionHeightScale + "x;\\S" + numerator + "/" + denominator + ";}" + format.InchesSymbol;
                     break;
                 case FractionFormatType.NotStacked:
                     text = feetStr + inches + " " + numerator + "/" + denominator + format.InchesSymbol;
@@ -175,22 +181,26 @@ namespace netDxf.Units
                 if (feet == 0)
                 {
                     if (format.SupressZeroFeet)
-                        return "0" + format.InchesSymbol;
+                        return string.Format("0{0}", format.InchesSymbol);
                     if (format.SupressZeroInches)
-                        return "0" + format.FeetSymbol;
-                    return "0" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol;
+                        return string.Format("0{0}", format.FeetSymbol);
+                    return string.Format("0{0}{1}0{2}", format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
                 }
                 if (format.SupressZeroInches)
-                    return string.Format("{0}" + format.FeetSymbol, feet);
+                    return string.Format("{0}{1}", feet, format.FeetSymbol);
 
-                return string.Format("{0}" + format.FeetSymbol + format.FeetInchesSeparator + "0" + format.InchesSymbol, feet);
+                return string.Format("{0}{1}{2}0{3}", feet, format.FeetSymbol, format.FeetInchesSeparator, format.InchesSymbol);
             }
 
-            string feetStr = feet + format.FeetSymbol + format.FeetInchesSeparator;
-            if (format.SupressZeroFeet && feet == 0)
-                feetStr = string.Empty;
+            string inchesDec = inches.ToString(DecimalNumberFormat(format), numberFormat);
+            if (feet == 0)
+            {
+                if (format.SupressZeroFeet)
+                    return string.Format("{0}{1}", inches, format.InchesSymbol);
 
-            return string.Format(numberFormat, feetStr + "{0}" + format.InchesSymbol, inches.ToString(DecimalNumberFormat(format), numberFormat));
+                return string.Format("0{0}{1}{2}{3}", format.FeetSymbol, format.FeetInchesSeparator, inchesDec, format.InchesSymbol);
+            }
+            return string.Format("{0}{1}{2}{3}{4}", feet, format.FeetSymbol, format.FeetInchesSeparator, inchesDec, format.InchesSymbol);
         }
 
         /// <summary>
@@ -215,10 +225,10 @@ namespace netDxf.Units
             switch (format.FractionType)
             {
                 case FractionFormatType.Diagonal:
-                    text = "\\A1;" + num + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "#" + denominator + ";}";
+                    text = "\\A1;" + num + "{\\H" + format.FractionHeightScale + "x;\\S" + numerator + "#" + denominator + ";}";
                     break;
                 case FractionFormatType.Horizontal:
-                    text = "\\A1;" + num + "{\\H" + format.FractionalHeightScale + "x;\\S" + numerator + "/" + denominator + ";}";
+                    text = "\\A1;" + num + "{\\H" + format.FractionHeightScale + "x;\\S" + numerator + "/" + denominator + ";}";
                     break;
                 case FractionFormatType.NotStacked:
                     text = num + " " + numerator + "/" + denominator;

@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -35,6 +35,7 @@ namespace netDxf
 
         private double x;
         private double y;
+        private bool isNormalized;
 
         #endregion
 
@@ -48,6 +49,7 @@ namespace netDxf
         {
             this.x = value;
             this.y = value;
+            this.isNormalized = false;
         }
 
         /// <summary>
@@ -59,6 +61,7 @@ namespace netDxf
         {
             this.x = x;
             this.y = y;
+            this.isNormalized = false;
         }
 
         /// <summary>
@@ -74,6 +77,7 @@ namespace netDxf
                 throw new ArgumentOutOfRangeException(nameof(array), array.Length, "The dimension of the array must be two");
             this.x = array[0];
             this.y = array[1];
+            this.isNormalized = false;
         }
 
         #endregion
@@ -93,7 +97,7 @@ namespace netDxf
         /// </summary>
         public static Vector2 UnitX
         {
-            get { return new Vector2(1, 0); }
+            get { return new Vector2(1, 0) {isNormalized = true}; }
         }
 
         /// <summary>
@@ -101,7 +105,7 @@ namespace netDxf
         /// </summary>
         public static Vector2 UnitY
         {
-            get { return new Vector2(0, 1); }
+            get { return new Vector2(0, 1) {isNormalized = true}; }
         }
 
         /// <summary>
@@ -122,7 +126,11 @@ namespace netDxf
         public double X
         {
             get { return this.x; }
-            set { this.x = value; }
+            set
+            {
+                this.isNormalized = false;
+                this.x = value;
+            }
         }
 
         /// <summary>
@@ -131,7 +139,11 @@ namespace netDxf
         public double Y
         {
             get { return this.y; }
-            set { this.y = value; }
+            set
+            {
+                this.isNormalized = false;
+                this.y = value;
+            }
         }
 
         /// <summary>
@@ -147,29 +159,34 @@ namespace netDxf
                     case 0:
                         return this.x;
                     case 1:
-
                         return this.y;
                     default:
-
                         throw new ArgumentOutOfRangeException(nameof(index));
                 }
             }
             set
             {
+                this.isNormalized = false;
                 switch (index)
                 {
                     case 0:
                         this.x = value;
                         break;
                     case 1:
-
                         this.y = value;
                         break;
                     default:
-
                         throw new ArgumentOutOfRangeException(nameof(index));
                 }
             }
+        }
+
+        /// <summary>
+        /// Gets if the vector has been normalized.
+        /// </summary>
+        public bool IsNormalized
+        {
+            get { return this.isNormalized; }
         }
 
         #endregion
@@ -215,7 +232,22 @@ namespace netDxf
         /// <returns>Vector2.</returns>
         public static Vector2 Perpendicular(Vector2 u)
         {
-            return new Vector2(-u.Y, u.X);
+            return new Vector2(-u.Y, u.X) {isNormalized = u.IsNormalized};
+        }
+
+        /// <summary>
+        /// Rotates a vector.
+        /// </summary>
+        /// <param name="u">Vector2.</param>
+        /// <param name="angle">Rotation angles in radians.</param>
+        /// <returns></returns>
+        public static Vector2 Rotate(Vector2 u, double angle)
+        {
+            if (MathHelper.IsZero(angle))
+                return u;
+            double sin = Math.Sin(angle);
+            double cos = Math.Cos(angle);
+            return new Vector2(u.X*cos - u.Y*sin, u.X*sin + u.Y*cos) {isNormalized = u.IsNormalized};
         }
 
         /// <summary>
@@ -370,13 +402,13 @@ namespace netDxf
         /// <returns>A normalized vector.</returns>
         public static Vector2 Normalize(Vector2 u)
         {
+            if (u.isNormalized) return u;
+
             double mod = u.Modulus();
-            if (MathHelper.IsOne(mod))
-                return u; // the vector is already normalized
             if (MathHelper.IsZero(mod))
                 return NaN;
             double modInv = 1/mod;
-            return new Vector2(u.x*modInv, u.y*modInv);
+            return new Vector2(u.x*modInv, u.y*modInv) {isNormalized = true};
         }
 
         #endregion
@@ -456,7 +488,7 @@ namespace netDxf
         /// <returns>The negative vector of u.</returns>
         public static Vector2 operator -(Vector2 u)
         {
-            return new Vector2(-u.X, -u.Y);
+            return new Vector2(-u.X, -u.Y) { isNormalized = u.IsNormalized };
         }
 
         /// <summary>
@@ -466,7 +498,7 @@ namespace netDxf
         /// <returns>The negative vector of u.</returns>
         public static Vector2 Negate(Vector2 u)
         {
-            return new Vector2(-u.X, -u.Y);
+            return new Vector2(-u.X, -u.Y) {isNormalized = u.IsNormalized};
         }
 
         /// <summary>
@@ -612,9 +644,9 @@ namespace netDxf
         /// </summary>
         public void Normalize()
         {
+            if (this.isNormalized) return;
+
             double mod = this.Modulus();
-            if (MathHelper.IsOne(mod))
-                return; // the vector is already normalized
             if (MathHelper.IsZero(mod))
                 this = NaN;
             else
@@ -623,6 +655,7 @@ namespace netDxf
                 this.x *= modInv;
                 this.y *= modInv;
             }
+            this.isNormalized = true;
         }
 
         /// <summary>
@@ -650,8 +683,8 @@ namespace netDxf
         /// <summary>
         /// Check if the components of two vectors are approximate equal.
         /// </summary>
-        /// <param name="a">Vector3.</param>
-        /// <param name="b">Vector3.</param>
+        /// <param name="a">Vector2.</param>
+        /// <param name="b">Vector2.</param>
         /// <returns>True if the two components are almost equal or false in any other case.</returns>
         public static bool Equals(Vector2 a, Vector2 b)
         {
@@ -661,8 +694,8 @@ namespace netDxf
         /// <summary>
         /// Check if the components of two vectors are approximate equal.
         /// </summary>
-        /// <param name="a">Vector3.</param>
-        /// <param name="b">Vector3.</param>
+        /// <param name="a">Vector2.</param>
+        /// <param name="b">Vector2.</param>
         /// <param name="threshold">Maximum tolerance.</param>
         /// <returns>True if the two components are almost equal or false in any other case.</returns>
         public static bool Equals(Vector2 a, Vector2 b, double threshold)

@@ -31,10 +31,12 @@ namespace netDxf.Entities
         /// Left to right.
         /// </summary>
         LeftToRight = 1,
+
         /// <summary>
         /// Top to bottom.
         /// </summary>
         TopToBottom = 3,
+
         /// <summary>
         /// By style (the flow direction is inherited from the associated text style).
         /// </summary>

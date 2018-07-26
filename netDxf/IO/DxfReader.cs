@@ -59,7 +59,7 @@ namespace netDxf.IO
         private Dictionary<string, BlockRecord> blockRecords;
 
         // entities, they will be processed at the end <Entity: entity, string: owner handle>.
-        private Dictionary<EntityObject, string> entityList;
+        private Dictionary<DxfObject, string> entityList;
 
         // Viewports, they will be processed at the end <Entity: Viewport, string: clipping boundary handle>.
         private Dictionary<Viewport, string> viewports;
@@ -94,6 +94,9 @@ namespace netDxf.IO
         private Dictionary<LinetypeSegment, string> linetypeSegmentStyleHandles;
         private Dictionary<LinetypeShapeSegment, short> linetypeShapeSegmentToNumber;
 
+        // XData for table objects
+        private Dictionary<IHasXData, List<XData>> hasXData;
+
         // the MLineStyles are defined, in the objects section, AFTER the MLine that references them,
         // temporarily this variables will store information to post process the MLine list
         private Dictionary<MLine, string> mLineToStyleNames;
@@ -124,11 +127,18 @@ namespace netDxf.IO
         /// Reads the whole stream.
         /// </summary>
         /// <param name="stream">Stream.</param>
+        /// <param name="supportFolders">List of the document support folders.</param>
         public DxfDocument Read(Stream stream, IEnumerable<string> supportFolders)
         {
             long startPosition = stream.Position;
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
+
+            DxfVersion version = DxfDocument.CheckDxfFileVersion(stream, out this.isBinary);
+            stream.Position = startPosition;
+
+            if(version<DxfVersion.AutoCad2000)
+                throw new DxfVersionNotSupportedException(string.Format("DXF file version not supported : {0}.", version), version);
 
             string dwgcodepage = CheckHeaderVariable(stream, HeaderVariableCode.DwgCodePage, out this.isBinary);
             stream.Position = startPosition;
@@ -138,8 +148,6 @@ namespace netDxf.IO
                 if (this.isBinary)
                 {
                     Encoding encoding;
-                    DxfVersion version = DxfDocument.CheckDxfFileVersion(stream, out this.isBinary);
-                    stream.Position = startPosition;
 
                     if (version >= DxfVersion.AutoCad2007)
                         encoding = Encoding.UTF8;
@@ -188,12 +196,19 @@ namespace netDxf.IO
 
             this.doc = new DxfDocument(new HeaderVariables(), false, supportFolders);
 
-            this.entityList = new Dictionary<EntityObject, string>();
+            this.entityList = new Dictionary<DxfObject, string>();
             this.viewports = new Dictionary<Viewport, string>();
             this.hatchToPaths = new Dictionary<Hatch, List<HatchBoundaryPath>>();
             this.hatchContourns = new Dictionary<HatchBoundaryPath, List<string>>();
             this.decodedStrings = new Dictionary<string, string>();
             this.leaderAnnotation = new Dictionary<Leader, string>();
+
+            //tables
+            this.hasXData = new Dictionary<IHasXData, List<XData>>();
+            this.dimStyleToHandles = new Dictionary<DimensionStyle, string[]>();
+            this.complexLinetypes = new List<Linetype>();
+            this.linetypeSegmentStyleHandles = new Dictionary<LinetypeSegment, string>();
+            this.linetypeShapeSegmentToNumber = new Dictionary<LinetypeShapeSegment, short>();
 
             // blocks
             this.nestedInserts = new Dictionary<Insert, string>();
@@ -204,10 +219,6 @@ namespace netDxf.IO
             // objects
             this.dictionaries = new Dictionary<string, DictionaryObject>(StringComparer.OrdinalIgnoreCase);
             this.groupEntities = new Dictionary<Group, List<string>>();
-            this.dimStyleToHandles = new Dictionary<DimensionStyle, string[]>();
-            this.complexLinetypes = new List<Linetype>();
-            this.linetypeSegmentStyleHandles = new Dictionary<LinetypeSegment, string>();
-            this.linetypeShapeSegmentToNumber = new Dictionary<LinetypeShapeSegment, short>();
             this.imageDefReactors = new Dictionary<string, ImageDefinitionReactor>(StringComparer.OrdinalIgnoreCase);
             this.imgDefHandles = new Dictionary<string, ImageDefinition>(StringComparer.OrdinalIgnoreCase);
             this.imgToImgDefHandles = new Dictionary<Image, string>();
@@ -626,6 +637,28 @@ namespace netDxf.IO
                 this.ReadTable();
             }
 
+            // check if all table collections has been created
+            if (this.doc.ApplicationRegistries == null)
+                this.doc.ApplicationRegistries = new ApplicationRegistries(this.doc);
+            if (this.doc.Blocks == null)
+                this.doc.Blocks = new BlockRecords(this.doc);
+            if (this.doc.DimensionStyles == null)
+                this.doc.DimensionStyles = new DimensionStyles(this.doc);
+            if (this.doc.Layers == null)
+                this.doc.Layers = new Layers(this.doc);
+            if (this.doc.Linetypes == null)
+                this.doc.Linetypes = new Linetypes(this.doc);
+            if (this.doc.TextStyles == null)
+                this.doc.TextStyles = new TextStyles(this.doc);
+            if (this.doc.ShapeStyles == null)
+                this.doc.ShapeStyles = new ShapeStyles(this.doc);
+            if (this.doc.UCSs == null)
+                this.doc.UCSs = new UCSs(this.doc);
+            if (this.doc.Views == null)
+                this.doc.Views = new Views(this.doc);
+            if (this.doc.VPorts == null)
+                this.doc.VPorts = new VPorts(this.doc);
+
             // post process complex linetypes
             foreach (KeyValuePair<LinetypeSegment, string> pair in this.linetypeSegmentStyleHandles)
             {
@@ -659,30 +692,23 @@ namespace netDxf.IO
                 // remove invalid linetype shape segments
                 foreach (LinetypeSegment s in remove)
                     complexLinetype.Segments.Remove(s);
-                this.doc.Linetypes.Add(complexLinetype);
+                this.doc.Linetypes.Add(complexLinetype, false);
             }
 
-            // check if all table collections has been created
-            if (this.doc.ApplicationRegistries == null)
-                this.doc.ApplicationRegistries = new ApplicationRegistries(this.doc);
-            if (this.doc.Blocks == null)
-                this.doc.Blocks = new BlockRecords(this.doc);
-            if (this.doc.DimensionStyles == null)
-                this.doc.DimensionStyles = new DimensionStyles(this.doc);
-            if (this.doc.Layers == null)
-                this.doc.Layers = new Layers(this.doc);
-            if (this.doc.Linetypes == null)
-                this.doc.Linetypes = new Linetypes(this.doc);
-            if (this.doc.TextStyles == null)
-                this.doc.TextStyles = new TextStyles(this.doc);
-            if (this.doc.ShapeStyles == null)
-                this.doc.ShapeStyles = new ShapeStyles(this.doc);
-            if (this.doc.UCSs == null)
-                this.doc.UCSs = new UCSs(this.doc);
-            if (this.doc.Views == null)
-                this.doc.Views = new Views(this.doc);
-            if (this.doc.VPorts == null)
-                this.doc.VPorts = new VPorts(this.doc);
+            //post process XData
+            foreach (KeyValuePair<IHasXData, List<XData>> pair in this.hasXData)
+            {
+                IHasXData o = pair.Key;
+                ApplicationRegistry appReg = o as ApplicationRegistry;
+                if (appReg == null)
+                {
+                    pair.Key.XData.AddRange(pair.Value);
+                }
+                else
+                {
+                    this.doc.ApplicationRegistries[appReg.Name].XData.AddRange(pair.Value);
+                }
+            }
         }
 
         private void ReadBlocks()
@@ -942,50 +968,6 @@ namespace netDxf.IO
 
         #region table methods
 
-        private void CreateTableCollection(string name, string handle)
-        {
-            Debug.Assert(this.chunk.ReadString() == SubclassMarker.Table);
-
-            while (this.chunk.Code != 0)
-            {
-                this.chunk.Next();
-            }
-
-            switch (name)
-            {
-                case DxfObjectCode.ApplicationIdTable:
-                    this.doc.ApplicationRegistries = new ApplicationRegistries(this.doc, handle);
-                    break;
-                case DxfObjectCode.BlockRecordTable:
-                    this.doc.Blocks = new BlockRecords(this.doc, handle);
-                    return;
-                case DxfObjectCode.DimensionStyleTable:
-                    this.doc.DimensionStyles = new DimensionStyles(this.doc, handle);
-                    break;
-                case DxfObjectCode.LayerTable:
-                    this.doc.Layers = new Layers(this.doc, handle);
-                    break;
-                case DxfObjectCode.LinetypeTable:
-                    this.doc.Linetypes = new Linetypes(this.doc, handle);
-                    break;
-                case DxfObjectCode.TextStyleTable:
-                    this.doc.TextStyles = new TextStyles(this.doc, handle);
-                    this.doc.ShapeStyles = new ShapeStyles(this.doc);
-                    break;
-                case DxfObjectCode.UcsTable:
-                    this.doc.UCSs = new UCSs(this.doc, handle);
-                    break;
-                case DxfObjectCode.ViewTable:
-                    this.doc.Views = new Views(this.doc, handle);
-                    break;
-                case DxfObjectCode.VportTable:
-                    this.doc.VPorts = new VPorts(this.doc, handle);
-                    break;
-                default:
-                    throw new Exception(string.Format("Unknown Table name {0} at position {1}", name, this.chunk.CurrentPosition));
-            }
-        }
-
         private void ReadTable()
         {
             Debug.Assert(this.chunk.ReadString() == DxfObjectCode.Table);
@@ -1014,13 +996,48 @@ namespace netDxf.IO
                         this.chunk.Next();
                         break;
                     case 100:
-                        Debug.Assert(this.chunk.ReadString() == SubclassMarker.Table);
-                        this.CreateTableCollection(tableName, handle);
+                        Debug.Assert(this.chunk.ReadString() == SubclassMarker.Table || this.chunk.ReadString() == SubclassMarker.DimensionStyleTable);
+                        this.chunk.Next();
                         break;
                     default:
                         this.chunk.Next();
                         break;
                 }
+            }
+
+            // create collection
+            switch (tableName)
+            {
+                case DxfObjectCode.ApplicationIdTable:
+                    this.doc.ApplicationRegistries = new ApplicationRegistries(this.doc, handle);
+                    break;
+                case DxfObjectCode.BlockRecordTable:
+                    this.doc.Blocks = new BlockRecords(this.doc, handle);
+                    break;
+                case DxfObjectCode.DimensionStyleTable:
+                    this.doc.DimensionStyles = new DimensionStyles(this.doc, handle);
+                    break;
+                case DxfObjectCode.LayerTable:
+                    this.doc.Layers = new Layers(this.doc, handle);
+                    break;
+                case DxfObjectCode.LinetypeTable:
+                    this.doc.Linetypes = new Linetypes(this.doc, handle);
+                    break;
+                case DxfObjectCode.TextStyleTable:
+                    this.doc.TextStyles = new TextStyles(this.doc, handle);
+                    this.doc.ShapeStyles = new ShapeStyles(this.doc);
+                    break;
+                case DxfObjectCode.UcsTable:
+                    this.doc.UCSs = new UCSs(this.doc, handle);
+                    break;
+                case DxfObjectCode.ViewTable:
+                    this.doc.Views = new Views(this.doc, handle);
+                    break;
+                case DxfObjectCode.VportTable:
+                    this.doc.VPorts = new VPorts(this.doc, handle);
+                    break;
+                default:
+                    throw new Exception(string.Format("Unknown Table name {0} at position {1}", tableName, this.chunk.CurrentPosition));
             }
 
             // read table entries
@@ -1178,6 +1195,7 @@ namespace netDxf.IO
             Debug.Assert(this.chunk.ReadString() == SubclassMarker.ApplicationId);
 
             string appId = string.Empty;
+            List<XData> xData = new List<XData>();
             this.chunk.Next();
 
             while (this.chunk.Code != 0)
@@ -1188,13 +1206,25 @@ namespace netDxf.IO
                         appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string id = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(this.GetApplicationRegistry(id));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
+
                         this.chunk.Next();
                         break;
                 }
             }
 
-            return !TableObject.IsValidName(appId) ? null : new ApplicationRegistry(appId, false);
+            if (!TableObject.IsValidName(appId)) return null;
+
+            ApplicationRegistry applicationRegistry = new ApplicationRegistry(appId, false);
+            if(xData.Count>0) this.hasXData.Add(applicationRegistry, xData);
+            return applicationRegistry;
         }
 
         private BlockRecord ReadBlockRecord()
@@ -1260,7 +1290,7 @@ namespace netDxf.IO
                 ScaleUniformly = scaleUniformly
             };
 
-            record.XData.AddRange(xData);
+            if (xData.Count > 0) this.hasXData.Add(record, xData);
 
             // here is where dxf versions prior to AutoCad2007 stores the block units
             // read the layer transparency from the extended data
@@ -1320,13 +1350,14 @@ namespace netDxf.IO
 
             DimensionStyle defaultDim = DimensionStyle.Default;
             string name = string.Empty;
+            List<XData> xData = new List<XData>();
 
             // dimension lines
             AciColor dimclrd = defaultDim.DimLineColor;
             string dimltype = string.Empty; // handle for post processing
             Lineweight dimlwd = defaultDim.DimLineLineweight;
-            bool dimsd1 = false;
-            bool dimsd2 = false;
+            bool dimsd1 = defaultDim.DimLine1Off;
+            bool dimsd2 = defaultDim.DimLine2Off;
             double dimdle = defaultDim.DimLineExtend;
             double dimdli = defaultDim.DimBaselineSpacing;
 
@@ -1335,10 +1366,12 @@ namespace netDxf.IO
             string dimltex1 = string.Empty; // handle for post processing
             string dimltex2 = string.Empty; // handle for post processing
             Lineweight dimlwe = defaultDim.ExtLineLineweight;
-            bool dimse1 = false;
-            bool dimse2 = false;
+            bool dimse1 = defaultDim.ExtLine1Off;
+            bool dimse2 = defaultDim.ExtLine2Off;
             double dimexo = defaultDim.ExtLineOffset;
             double dimexe = defaultDim.ExtLineExtend;
+            bool dimfxlon = defaultDim.ExtLineFixed;
+            double dimfxl = defaultDim.ExtLineFixedLength;
 
             // symbols and arrows
             double dimasz = defaultDim.ArrowSize;
@@ -1348,32 +1381,54 @@ namespace netDxf.IO
             string dimblk1 = string.Empty; // handle for post processing
             string dimblk2 = string.Empty; // handle for post processing
             string dimldrblk = string.Empty; // handle for post processing
-
-            // fit
-            double dimscale = defaultDim.DimScaleOverall;
-            short dimtih = defaultDim.DIMTIH;
-            short dimtoh = defaultDim.DIMTOH;
-
+                
             // text
             string dimtxsty = string.Empty; // handle for post processing
             AciColor dimclrt = defaultDim.TextColor;
+            short dimtfill = 0;
+            AciColor dimtfillclrt = defaultDim.TextFillColor;
             double dimtxt = defaultDim.TextHeight;
-            short dimjust = 0;
-            short dimtad = 0;
+            DimensionStyleTextVerticalPlacement dimtad = DimensionStyleTextVerticalPlacement.Centered;
+            DimensionStyleTextHorizontalPlacement dimjust = DimensionStyleTextHorizontalPlacement.Centered;
             double dimgap = defaultDim.TextOffset;
+            bool dimtih = defaultDim.TextInsideAlign;
+            bool dimtoh = defaultDim.TextOutsideAlign;
+            DimensionStyleTextDirection dimtxtdirection = defaultDim.TextDirection;
+            double dimtfac = defaultDim.TextFractionHeightScale;
+
+            // fit
+            bool dimtofl = defaultDim.FitDimLineForce;
+            bool dimsoxd = defaultDim.FitDimLineInside;
+            double dimscale = defaultDim.DimScaleOverall;
+            DimensionStyleFitOptions dimatfit = defaultDim.FitOptions;
+            bool dimtix = defaultDim.FitTextInside;
+            DimensionStyleFitTextMove dimtmove = defaultDim.FitTextMove;
 
             // primary units
-            double dimlfac = defaultDim.DimScaleLinear;
             short dimadec = defaultDim.AngularPrecision;
-            short dimdec = 4;
-            string dimpost = string.Empty;
+            short dimdec = defaultDim.LengthPrecision;
             char dimdsep = defaultDim.DecimalSeparator;
-            AngleUnitType dimaunit = defaultDim.DimAngularUnits;
+            double dimlfac = defaultDim.DimScaleLinear;
             LinearUnitType dimlunit = defaultDim.DimLengthUnits;
-            FractionFormatType dimfrac = defaultDim.FractionalType;
+            AngleUnitType dimaunit = defaultDim.DimAngularUnits;
+            FractionFormatType dimfrac = defaultDim.FractionType;
             double dimrnd = defaultDim.DimRoundoff;
+
+            string dimpost = string.Empty;
             short dimzin = 0;
             short dimazin = 3;
+
+            // alternate units
+            DimensionStyleAlternateUnits dimensionStyleAlternateUnits = new DimensionStyleAlternateUnits();
+            string dimapost = string.Empty;
+            short dimaltz = 0;
+
+            // tolerances
+            DimensionStyleTolerances tolerances = new DimensionStyleTolerances();
+            short dimtol = 0;
+            short dimlim = 0;
+            short dimtzin = 0;
+            short dimalttz = 0;
 
             this.chunk.Next();
 
@@ -1387,6 +1442,10 @@ namespace netDxf.IO
                         break;
                     case 3:
                         dimpost = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        this.chunk.Next();
+                        break;
+                    case 4:
+                        dimapost = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 40:
@@ -1431,12 +1490,40 @@ namespace netDxf.IO
                             dimdle = defaultDim.DimLineExtend;
                         this.chunk.Next();
                         break;
+                    case 47:
+                        tolerances.UpperLimit = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 48:
+                        tolerances.LowerLimit = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 49:
+                        dimfxl = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 69:
+                        dimtfill = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 70:
+                        dimtfillclrt = AciColor.FromCadIndex(this.chunk.ReadShort());
+                        this.chunk.Next();
+                        break;
+                    case 71:
+                        dimtol = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 72:
+                        dimlim = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
                     case 73:
-                        dimtih = this.chunk.ReadShort();
+                        dimtih = this.chunk.ReadShort() != 0;
                         this.chunk.Next();
                         break;
                     case 74:
-                        dimtoh = this.chunk.ReadShort();
+                        dimtoh = this.chunk.ReadShort() != 0;
                         this.chunk.Next();
                         break;
                     case 75:
@@ -1448,7 +1535,7 @@ namespace netDxf.IO
                         this.chunk.Next();
                         break;
                     case 77:
-                        dimtad = this.chunk.ReadShort();
+                        dimtad = (DimensionStyleTextVerticalPlacement) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
                     case 78:
@@ -1469,18 +1556,61 @@ namespace netDxf.IO
                         dimcen = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
+                    case 143:
+                        double dimaltf = this.chunk.ReadDouble();
+                        if (dimaltf <= 0.0)
+                            dimaltf = defaultDim.AlternateUnits.Multiplier;
+                        dimensionStyleAlternateUnits.Multiplier = dimaltf;
+                        this.chunk.Next();
+                        break;
                     case 144:
                         dimlfac = this.chunk.ReadDouble();
                         if (MathHelper.IsZero(dimlfac))
-                            dimlfac = 1.0;
+                            dimlfac = defaultDim.DimScaleLinear;
+                        this.chunk.Next();
+                        break;
+                    case 146:
+                        dimtfac = this.chunk.ReadDouble();
+                        if (dimtfac <= 0)
+                            dimtfac = defaultDim.TextFractionHeightScale;
                         this.chunk.Next();
                         break;
                     case 147:
-                        dimgap = Math.Abs(this.chunk.ReadDouble());
+                        dimgap = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 148:
+                        double dimaltrnd = this.chunk.ReadDouble();
+                        if (dimaltrnd < 0.000001 && !MathHelper.IsZero(dimaltrnd, double.Epsilon))
+                            dimaltrnd = defaultDim.AlternateUnits.Roundoff;
+                        dimensionStyleAlternateUnits.Roundoff = dimaltrnd;
+                        this.chunk.Next();
+                        break;
+                    case 170:
+                        dimensionStyleAlternateUnits.Enabled = this.chunk.ReadShort() != 0;
+                        this.chunk.Next();
+                        break;
+                    case 171:
+                        short dimaltd = this.chunk.ReadShort();
+                        if (dimaltd < 0)
+                            dimaltd = defaultDim.AlternateUnits.LengthPrecision;
+                        dimensionStyleAlternateUnits.LengthPrecision = dimaltd;
+                        this.chunk.Next();
+                        break;
+                    case 172:
+                        dimtofl = this.chunk.ReadShort() != 0;
                         this.chunk.Next();
                         break;
                     case 173:
                         dimsah = this.chunk.ReadShort() != 0;
+                        this.chunk.Next();
+                        break;
+                    case 174:
+                        dimtix = this.chunk.ReadShort() != 0;
+                        this.chunk.Next();
+                        break;
+                    case 175:
+                        dimsoxd = this.chunk.ReadShort() != 0;
                         this.chunk.Next();
                         break;
                     case 176:
@@ -1507,6 +1637,59 @@ namespace netDxf.IO
                             dimdec = defaultDim.LengthPrecision;
                         this.chunk.Next();
                         break;
+                    case 272:
+                        short dimtdec = this.chunk.ReadShort();
+                        if (dimtdec < 0)
+                            dimtdec = defaultDim.Tolerances.Precision;
+                        tolerances.Precision = dimtdec;
+                        this.chunk.Next();
+                        break;
+                    case 273:
+                        short dimaltu = this.chunk.ReadShort();
+                        switch (dimaltu)
+                        {
+                            case 1:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Scientific;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                            case 2:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Decimal;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                            case 3:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Engineering;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                            case 4:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Architectural;
+                                dimensionStyleAlternateUnits.StackUnits = true;
+                                break;
+                            case 5:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Fractional;
+                                dimensionStyleAlternateUnits.StackUnits = true;
+                                break;
+                            case 6:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Architectural;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                            case 7:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Fractional;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                            default:
+                                dimensionStyleAlternateUnits.LengthUnits = LinearUnitType.Scientific;
+                                dimensionStyleAlternateUnits.StackUnits = false;
+                                break;
+                        }
+                        this.chunk.Next();
+                        break;
+                    case 274:
+                        short dimalttd = this.chunk.ReadShort();
+                        if (dimalttd < 0)
+                            dimalttd = defaultDim.Tolerances.AlternatePrecision;
+                        tolerances.AlternatePrecision = dimalttd;
+                        this.chunk.Next();
+                        break;
                     case 275:
                         dimaunit = (AngleUnitType) this.chunk.ReadShort();
                         this.chunk.Next();
@@ -1523,8 +1706,12 @@ namespace netDxf.IO
                         dimdsep = (char) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
+                    case 279:
+                        dimtmove = (DimensionStyleFitTextMove) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
                     case 280:
-                        dimjust = this.chunk.ReadShort();
+                        dimjust = (DimensionStyleTextHorizontalPlacement) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
                     case 281:
@@ -1533,6 +1720,34 @@ namespace netDxf.IO
                         break;
                     case 282:
                         dimsd2 = this.chunk.ReadShort() != 0;
+                        this.chunk.Next();
+                        break;
+                    case 283:
+                        tolerances.VerticalPlacement = (DimensionStyleTolerancesVerticalPlacement) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 284:
+                        dimtzin = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 285:
+                        dimaltz = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 286:
+                        dimalttz = this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 289:
+                        dimatfit = (DimensionStyleFitOptions) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 290:
+                        dimfxlon = this.chunk.ReadBool();
+                        this.chunk.Next();
+                        break;
+                    case 294:
+                        dimtxtdirection = this.chunk.ReadBool() ? DimensionStyleTextDirection.LeftToRight : DimensionStyleTextDirection.RightToLeft;
                         this.chunk.Next();
                         break;
                     case 340:
@@ -1575,7 +1790,15 @@ namespace netDxf.IO
                         dimlwe = (Lineweight) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string id = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(this.GetApplicationRegistry(id));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
+
                         this.chunk.Next();
                         break;
                 }
@@ -1583,14 +1806,13 @@ namespace netDxf.IO
 
             if (!TableObject.IsValidName(name)) return null;
 
-            string[] textPrefixSuffix = GetDimStylePrefixAndSuffix(dimpost);
-
             DimensionStyle style = new DimensionStyle(name, false)
             {
                 // dimension lines
                 DimLineColor = dimclrd,
                 DimLineLineweight = dimlwd,
-                DimLineOff = dimsd1 && dimsd2,
+                DimLine1Off = dimsd1,
+                DimLine2Off = dimsd2,
                 DimBaselineSpacing = dimdli,
                 DimLineExtend = dimdle,
 
@@ -1601,141 +1823,49 @@ namespace netDxf.IO
                 ExtLine2Off = dimse2,
                 ExtLineOffset = dimexo,
                 ExtLineExtend = dimexe,
+                ExtLineFixed = dimfxlon,
+                ExtLineFixedLength = dimfxl,
 
                 // symbols and arrows
                 ArrowSize = dimasz,
                 CenterMarkSize = dimcen,
 
-                // fit
-                DimScaleOverall = dimscale,
-                DIMTIH = dimtih,
-                DIMTOH = dimtoh,
-
                 // text
                 TextHeight = dimtxt,
                 TextColor = dimclrt,
-                DIMJUST = dimjust,
-                DIMTAD = dimtad,
+                TextFillColor = dimtfill == 2 ? dimtfillclrt : null,
+                TextVerticalPlacement = dimtad,
+                TextHorizontalPlacement = dimjust,
                 TextOffset = dimgap,
+                TextInsideAlign = dimtih,
+                TextOutsideAlign = dimtoh,
+                TextDirection = dimtxtdirection,
+                TextFractionHeightScale = dimtfac,
+
+                // fit
+                FitDimLineForce = dimtofl,
+                FitDimLineInside = dimsoxd,
+                DimScaleOverall = dimscale,
+                FitOptions = dimatfit,
+                FitTextInside = dimtix,
+                FitTextMove = dimtmove,
 
                 //primary units
                 AngularPrecision = dimadec,
                 LengthPrecision = dimdec,
-                DimScaleLinear = dimlfac,
-                DimPrefix = textPrefixSuffix[0],
-                DimSuffix = textPrefixSuffix[1],
                 DecimalSeparator = dimdsep,
-                DimAngularUnits = dimaunit,
+                DimScaleLinear = dimlfac,
                 DimLengthUnits = dimlunit,
-                FractionalType = dimfrac,
-                DimRoundoff = dimrnd
+                DimAngularUnits = dimaunit,
+                FractionType = dimfrac,
+                DimRoundoff = dimrnd,
+
+                // alternate units
+                AlternateUnits = dimensionStyleAlternateUnits,
+
+                // tolerances
+                Tolerances = tolerances
             };
-
-            // store information for post processing. The blocks, text styles, and line types definitions might appear after the dimension style
-            if (!dimsah)
-            {
-                dimblk1 = dimblk;
-                dimblk2 = dimblk;
-            }
-            string[] handles = {dimblk1, dimblk2, dimldrblk, dimtxsty, dimltype, dimltex1, dimltex2};
-            this.dimStyleToHandles.Add(style, handles);
-
-            // suppress leading and/or trailing zeros
-            if (12 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = true;
-                style.SuppressLinearTrailingZeros = true;
-                dimzin -= 12;
-            }
-            else if (8 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = false;
-                style.SuppressLinearTrailingZeros = true;
-                dimzin -= 8;
-            }
-            else if (4 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = true;
-                style.SuppressLinearTrailingZeros = false;
-                dimzin -= 4;
-            }
-            else
-            {
-                style.SuppressLinearLeadingZeros = false;
-                style.SuppressLinearTrailingZeros = false;
-            }
-
-            // suppress feet and/or inches
-            switch (dimzin)
-            {
-                case 0:
-                    style.SuppressZeroFeet = true;
-                    style.SuppressZeroInches = true;
-                    break;
-                case 1:
-                    style.SuppressZeroFeet = false;
-                    style.SuppressZeroInches = false;
-                    break;
-                case 2:
-                    style.SuppressZeroFeet = false;
-                    style.SuppressZeroInches = true;
-                    break;
-                case 3:
-                    style.SuppressZeroFeet = true;
-                    style.SuppressZeroInches = false;
-                    break;
-                default:
-                    style.SuppressZeroFeet = true;
-                    style.SuppressZeroInches = true;
-                    break;
-            }
-
-            // suppress feet and/or inches
-            if (dimlunit == LinearUnitType.Architectural || dimlunit == LinearUnitType.Engineering)
-            {
-                if (dimzin == 1)
-                {
-                    style.SuppressZeroFeet = false;
-                    style.SuppressZeroInches = false;
-                }
-                else if (dimzin == 2)
-                {
-                    style.SuppressZeroFeet = false;
-                    style.SuppressZeroInches = true;
-                }
-                else if (dimzin == 3)
-                {
-                    style.SuppressZeroFeet = true;
-                    style.SuppressZeroInches = false;
-                }
-                else
-                {
-                    style.SuppressZeroFeet = true;
-                    style.SuppressZeroInches = true;
-                }
-            }
-
-            // suppress leading and/or trailing zeros
-            if (12 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = true;
-                style.SuppressLinearTrailingZeros = true;
-            }
-            else if (8 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = false;
-                style.SuppressLinearTrailingZeros = true;
-            }
-            else if (4 - dimzin <= 0)
-            {
-                style.SuppressLinearLeadingZeros = true;
-                style.SuppressLinearTrailingZeros = false;
-            }
-            else
-            {
-                style.SuppressLinearLeadingZeros = false;
-                style.SuppressLinearTrailingZeros = false;
-            }
 
             // suppress angular leading and/or trailing zeros
             if (dimazin == 1)
@@ -1759,19 +1889,125 @@ namespace netDxf.IO
                 style.SuppressAngularTrailingZeros = false;
             }
 
+            bool[] supress = GetLinearZeroesSuppression(dimzin);
+            style.SuppressLinearLeadingZeros = supress[0];
+            style.SuppressLinearTrailingZeros = supress[1];
+            style.SuppressZeroFeet = supress[2];
+            style.SuppressZeroInches = supress[3];
+
+            supress = GetLinearZeroesSuppression(dimaltz);
+            style.AlternateUnits.SuppressLinearLeadingZeros = supress[0];
+            style.AlternateUnits.SuppressLinearTrailingZeros = supress[1];
+            style.AlternateUnits.SuppressZeroFeet = supress[2];
+            style.AlternateUnits.SuppressZeroInches = supress[3];
+
+            supress = GetLinearZeroesSuppression(dimtzin);
+            style.Tolerances.SuppressLinearLeadingZeros = supress[0];
+            style.Tolerances.SuppressLinearTrailingZeros = supress[1];
+            style.Tolerances.SuppressZeroFeet = supress[2];
+            style.Tolerances.SuppressZeroInches = supress[3];
+
+            supress = GetLinearZeroesSuppression(dimalttz);
+            style.Tolerances.AlternateSuppressLinearLeadingZeros = supress[0];
+            style.Tolerances.AlternateSuppressLinearTrailingZeros = supress[1];
+            style.Tolerances.AlternateSuppressZeroFeet = supress[2];
+            style.Tolerances.AlternateSuppressZeroInches = supress[3];
+
+            if (dimtol == 0 && dimlim == 0 )
+                style.Tolerances.DisplayMethod =  DimensionStyleTolerancesDisplayMethod.None;
+            if (dimtol == 1 && dimlim == 0)
+                style.Tolerances.DisplayMethod = Math.Abs(style.Tolerances.LowerLimit) > 0 ? DimensionStyleTolerancesDisplayMethod.Deviation : DimensionStyleTolerancesDisplayMethod.Symmetrical;
+            if (dimtol == 0 && dimlim == 1)
+                style.Tolerances.DisplayMethod = DimensionStyleTolerancesDisplayMethod.Limits;
+
+            string[] textPrefixSuffix = GetDimStylePrefixAndSuffix(dimpost, '<', '>');
+            style.DimPrefix = textPrefixSuffix[0];
+            style.DimSuffix = textPrefixSuffix[1];
+
+            textPrefixSuffix = GetDimStylePrefixAndSuffix(dimapost, '[', ']');
+            style.AlternateUnits.Prefix = textPrefixSuffix[0];
+            style.AlternateUnits.Suffix = textPrefixSuffix[1];
+
+            if (xData.Count > 0) this.hasXData.Add(style, xData);
+
+            // store information for post processing. The blocks, text styles, and line types definitions might appear after the dimension style
+            if (!dimsah)
+            {
+                dimblk1 = dimblk;
+                dimblk2 = dimblk;
+            }
+            string[] handles = {dimblk1, dimblk2, dimldrblk, dimtxsty, dimltype, dimltex1, dimltex2};
+            this.dimStyleToHandles.Add(style, handles);
+
             return style;
         }
 
-        private static string[] GetDimStylePrefixAndSuffix(string dimpost)
+        private static bool[] GetLinearZeroesSuppression(short token)
         {
-            int index = -1; // first occurrence of '<>'
-            for (int i = 0; i < dimpost.Length; i++)
+            bool[] suppress = new bool[4]; // leading, trailing, feet inches
+
+            // suppress leading and/or trailing zeros 
+            if (12 - token <= 0)
             {
-                if (dimpost[i] == '<')
+                suppress[0] = true;
+                suppress[1] = true;
+                token -= 12;
+            }
+            else if (8 - token <= 0)
+            {
+                suppress[0] = false;
+                suppress[1] = true;
+                token -= 8;
+            }
+            else if (4 - token <= 0)
+            {
+                suppress[0] = true;
+                suppress[1] = false;
+                token -= 4;
+            }
+            else
+            {
+                suppress[0] = false;
+                suppress[1] = false;
+            }
+
+            // suppress feet and/or inches
+            switch (token)
+            {
+                case 0:
+                    suppress[2] = true;
+                    suppress[3] = true;
+                    break;
+                case 1:
+                    suppress[2] = false;
+                    suppress[3] = false;
+                    break;
+                case 2:
+                    suppress[2] = false;
+                    suppress[3] = true;
+                    break;
+                case 3:
+                    suppress[2] = true;
+                    suppress[3] = false;
+                    break;
+                default:
+                    suppress[2] = true;
+                    suppress[3] = true;
+                    break;
+            }
+            return suppress;
+        }
+
+        private static string[] GetDimStylePrefixAndSuffix(string text, char start, char end)
+        {
+            int index = -1; // first occurrence of '<>' or '[]'
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == start)
                 {
-                    if (i + 1 < dimpost.Length)
+                    if (i + 1 < text.Length)
                     {
-                        if (dimpost[i + 1] == '>')
+                        if (text[i + 1] == end)
                         {
                             index = i;
                             break;
@@ -1784,13 +2020,13 @@ namespace netDxf.IO
             string suffix;
             if (index < 0)
             {
-                prefix = dimpost;
+                prefix = text;
                 suffix = string.Empty;
             }
             else
             {
-                prefix = dimpost.Substring(0, index);
-                suffix = dimpost.Substring(index + 2, dimpost.Length - (index + 2));
+                prefix = text.Substring(0, index);
+                suffix = text.Substring(index + 2, text.Length - (index + 2));
             }
 
             return new[] {prefix, suffix};
@@ -1807,8 +2043,8 @@ namespace netDxf.IO
             Linetype linetype = Linetype.ByLayer;
             Lineweight lineweight = Lineweight.Default;
             LayerFlags flags = LayerFlags.None;
-            Transparency transparency = new Transparency(0);
-            XDataDictionary xData = new XDataDictionary();
+            List<XData> xData = new List<XData>();
+
             this.chunk.Next();
 
             while (this.chunk.Code != 0)
@@ -1867,21 +2103,7 @@ namespace netDxf.IO
 
             if (!TableObject.IsValidName(name)) return null;
 
-            // read the layer transparency from the extended data
-            XData xDataTransparency;
-            if (xData.TryGetValue("AcCmTransparency", out xDataTransparency))
-            {
-                // there should be only one entry with the transparency value, the first 1071 code will be used
-                foreach (XDataRecord record in xDataTransparency.XDataRecord)
-                {
-                    if (record.Code == XDataCode.Int32)
-                    {
-                        transparency = Transparency.FromAlphaValue((int) record.Value);
-                    }
-                }
-            }
-
-            return new Layer(name, false)
+            Layer layer = new Layer(name, false)
             {
                 Color = color,
                 Linetype = linetype,
@@ -1889,9 +2111,26 @@ namespace netDxf.IO
                 IsFrozen = flags.HasFlag(LayerFlags.Frozen),
                 IsLocked = flags.HasFlag(LayerFlags.Locked),
                 Plot = plot,
-                Lineweight = lineweight,
-                Transparency = transparency
+                Lineweight = lineweight
             };
+
+            if (xData.Count > 0) this.hasXData.Add(layer, xData);
+
+            // read the layer transparency from the extended data
+            XData xDataTransparency;
+            if (layer.XData.TryGetValue("AcCmTransparency", out xDataTransparency))
+            {
+                // there should be only one entry with the transparency value, the first 1071 code will be used
+                foreach (XDataRecord record in xDataTransparency.XDataRecord)
+                {
+                    if (record.Code == XDataCode.Int32)
+                    {
+                        layer.Transparency = Transparency.FromAlphaValue((int) record.Value);
+                    }
+                }
+            }
+            
+            return layer;
         }
 
         private Linetype ReadLinetype(out bool isComplex)
@@ -1902,6 +2141,7 @@ namespace netDxf.IO
             string name = null;
             string description = null;
             List<LinetypeSegment> segments = new List<LinetypeSegment>();
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
 
@@ -1950,13 +2190,24 @@ namespace netDxf.IO
                         if(segment != null) segments.Add(segment);
 
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
             }
 
-            return !TableObject.IsValidName(name) ? null : new Linetype(name, segments, description, false);
+            if(!TableObject.IsValidName(name)) return null;
+
+            Linetype linetype = new Linetype(name, segments, description, false);
+            if (xData.Count > 0) this.hasXData.Add(linetype, xData);
+            return linetype;
         }
 
         private LinetypeSegment ReadLinetypeComplexSegment(int type, double length)
@@ -2046,7 +2297,8 @@ namespace netDxf.IO
             double widthFactor = 0.0f;
             double obliqueAngle = 0.0f;
             bool isShapeStyle = false;
-            XDataDictionary xData = new XDataDictionary();
+            XData xDataFont = null;
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
 
@@ -2112,6 +2364,7 @@ namespace netDxf.IO
                     case 1001:
                         string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        if (string.Equals(appId, ApplicationRegistry.DefaultName)) xDataFont = data;
                         xData.Add(data);
                         break;
                     default:
@@ -2124,22 +2377,26 @@ namespace netDxf.IO
 
             // shape styles are handle in a separate list
             if (isShapeStyle)
-                return new ShapeStyle(Path.GetFileNameWithoutExtension(file), file, height, widthFactor, obliqueAngle);
+            {
+                ShapeStyle shapeStyle = new ShapeStyle(Path.GetFileNameWithoutExtension(file), file, height, widthFactor, obliqueAngle);
+                if (xData.Count > 0) this.hasXData.Add(shapeStyle, xData);
+                return shapeStyle;
+            }
 
             // text styles
             if (!TableObject.IsValidName(name)) return null;
+
+            TextStyle style;
 
             // if the text style does not contain information about the font file,
             // we will try to read it from the extended data, this is only applicable for true type fonts
             if (string.IsNullOrEmpty(file))
             {
                 // read the font family from the extended data
-                XData xDataFont;
                 string fontFamily = string.Empty;
                 FontStyle fontStyle = FontStyle.Regular;
-                if (xData.TryGetValue(ApplicationRegistry.DefaultName, out xDataFont))
+                if (xDataFont != null)
                 {
-                    // there should be only one entry with the transparency value, the first 1071 code will be used
                     foreach (XDataRecord record in xDataFont.XDataRecord)
                     {
                         if (record.Code == XDataCode.String)
@@ -2154,10 +2411,40 @@ namespace netDxf.IO
                     }
                 }
 
-                // if cannot find the font family name discard the style
-                if (string.IsNullOrEmpty(fontFamily)) return null;
+                // if cannot find the font family name use the default "simplex.shx" font
+                if (string.IsNullOrEmpty(fontFamily))
+                {
+                    style = new TextStyle(name, "simplex.shx", false)
+                    {
+                        Height = height,
+                        IsBackward = isBackward,
+                        IsUpsideDown = isUpsideDown,
+                        IsVertical = isVertical,
+                        ObliqueAngle = obliqueAngle,
+                        WidthFactor = widthFactor
+                    };
+                }
+                else
+                {
+                    style = new TextStyle(name, fontFamily, fontStyle, false)
+                    {
+                        Height = height,
+                        IsBackward = isBackward,
+                        IsUpsideDown = isUpsideDown,
+                        IsVertical = isVertical,
+                        ObliqueAngle = obliqueAngle,
+                        WidthFactor = widthFactor
+                    };
+                }
+            }
+            else
+            {
+                // only true type TTF fonts or compiled shape SHX fonts are allowed, the default "simplex.shx" font will be used in this case
+                if (!Path.GetExtension(file).Equals(".TTF", StringComparison.InvariantCultureIgnoreCase) &&
+                    !Path.GetExtension(file).Equals(".SHX", StringComparison.InvariantCultureIgnoreCase))
+                    file = "simplex.shx";
 
-                return new TextStyle(name, fontFamily, fontStyle, false)
+                style = new TextStyle(name, file, false)
                 {
                     Height = height,
                     IsBackward = isBackward,
@@ -2166,22 +2453,13 @@ namespace netDxf.IO
                     ObliqueAngle = obliqueAngle,
                     WidthFactor = widthFactor
                 };
+
+                if (Path.GetExtension(file).Equals(".SHX", StringComparison.InvariantCultureIgnoreCase) &&
+                    Path.GetExtension(bigFont).Equals(".SHX", StringComparison.InvariantCultureIgnoreCase))
+                    style.BigFont = bigFont;
             }
 
-
-            TextStyle style = new TextStyle(name, file, false)
-            {
-                Height = height,
-                IsBackward = isBackward,
-                IsUpsideDown = isUpsideDown,
-                IsVertical = isVertical,
-                ObliqueAngle = obliqueAngle,
-                WidthFactor = widthFactor
-            };
-
-            if (Path.GetExtension(file).Equals(".SHX", StringComparison.InvariantCultureIgnoreCase) &&
-                Path.GetExtension(bigFont).Equals(".SHX", StringComparison.InvariantCultureIgnoreCase))
-                style.BigFont = bigFont;
+            if (xData.Count > 0) this.hasXData.Add(style, xData);
 
             return style;
         }
@@ -2195,6 +2473,7 @@ namespace netDxf.IO
             Vector3 xDir = Vector3.UnitX;
             Vector3 yDir = Vector3.UnitY;
             double elevation = 0.0;
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
 
@@ -2246,7 +2525,14 @@ namespace netDxf.IO
                         elevation = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -2254,10 +2540,9 @@ namespace netDxf.IO
 
             if (!TableObject.IsValidName(name)) return null;
 
-            return new UCS(name, origin, xDir, yDir, false)
-            {
-                Elevation = elevation
-            };
+            UCS ucs = new UCS(name, origin, xDir, yDir, false) {Elevation = elevation};
+            if (xData.Count > 0) this.hasXData.Add(ucs, xData);
+            return ucs;
         }
 
         private View ReadView()
@@ -2290,6 +2575,7 @@ namespace netDxf.IO
             double ratio = 1.0;
             bool showGrid = true;
             bool snapMode = false;
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
 
@@ -2375,7 +2661,14 @@ namespace netDxf.IO
                         showGrid = this.chunk.ReadShort() != 0;
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -2384,7 +2677,7 @@ namespace netDxf.IO
             if (!(TableObject.IsValidName(name) || name.Equals(VPort.DefaultName, StringComparison.OrdinalIgnoreCase)))
                 return null;
 
-            return new VPort(name, false)
+            VPort vport = new VPort(name, false)
             {
                 ViewCenter = center,
                 SnapBasePoint = snapBasePoint,
@@ -2397,6 +2690,9 @@ namespace netDxf.IO
                 ShowGrid = showGrid,
                 SnapMode = snapMode,
             };
+
+            if (xData.Count > 0) this.hasXData.Add(vport, xData);
+            return vport;
         }
 
         private void ReadUnkownTableEntry()
@@ -2423,6 +2719,7 @@ namespace netDxf.IO
             Vector3 basePoint = Vector3.Zero;
             List<EntityObject> entities = new List<EntityObject>();
             List<AttributeDefinition> attDefs = new List<AttributeDefinition>();
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
             while (this.chunk.Code != 0)
@@ -2468,7 +2765,14 @@ namespace netDxf.IO
                         //name = dxfPairInfo.Value;
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -2477,13 +2781,14 @@ namespace netDxf.IO
             // read block entities
             while (this.chunk.ReadString() != DxfObjectCode.EndBlock)
             {
-                EntityObject entity = this.ReadEntity(true);
-                if (entity != null)
+                DxfObject dxfObject = this.ReadEntity(true);
+                if (dxfObject != null)
                 {
-                    AttributeDefinition attDef = entity as AttributeDefinition;
+                    AttributeDefinition attDef = dxfObject as AttributeDefinition;
                     if (attDef != null)
                         attDefs.Add(attDef);
-                    else
+                    EntityObject entity = dxfObject as EntityObject;
+                    if(entity != null)
                         entities.Add(entity);
                 }
             }
@@ -2538,6 +2843,7 @@ namespace netDxf.IO
             }
 
             block.End.Handle = endBlockHandle;
+            block.XData.AddRange(xData);
 
             if (name.StartsWith(Block.DefaultPaperSpaceName, StringComparison.OrdinalIgnoreCase))
             {
@@ -2584,6 +2890,7 @@ namespace netDxf.IO
             double rotation = 0.0;
             double obliqueAngle = 0.0;
             Vector3 normal = Vector3.UnitZ;
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
             while (this.chunk.Code != 0)
@@ -2675,7 +2982,14 @@ namespace netDxf.IO
                         normal.Z = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -2700,6 +3014,7 @@ namespace netDxf.IO
                 Rotation = rotation
             };
 
+            attDef.XData.AddRange(xData);
             return attDef;
         }
 
@@ -2897,7 +3212,7 @@ namespace netDxf.IO
             Vector3 ocsBasePoint = alignment == TextAlignment.BaselineLeft ? firstAlignmentPoint : secondAlignmentPoint;
             Vector3 wcsBasePoint = MathHelper.Transform(ocsBasePoint, normal, CoordinateSystem.Object, CoordinateSystem.World);
 
-            return new Attribute
+            Attribute attribute = new Attribute
             {
                 Handle = handle,
                 Color = color,
@@ -2920,13 +3235,15 @@ namespace netDxf.IO
                 ObliqueAngle = obliqueAngle,
                 Rotation = rotation
             };
+
+            return attribute;
         }
 
         #endregion
 
         #region entity methods
 
-        private EntityObject ReadEntity(bool isBlockEntity)
+        private DxfObject ReadEntity(bool isBlockEntity)
         {
             string handle = null;
             string owner = null;
@@ -2938,7 +3255,7 @@ namespace netDxf.IO
             bool isVisible = true;
             Transparency transparency = Transparency.ByLayer;
 
-            EntityObject entityObject;
+            DxfObject dxfObject;
 
             string dxfCode = this.chunk.ReadString();
             this.chunk.Next();
@@ -3024,121 +3341,138 @@ namespace netDxf.IO
             switch (dxfCode)
             {
                 case DxfObjectCode.Arc:
-                    entityObject = this.ReadArc();
+                    dxfObject = this.ReadArc();
                     break;
                 case DxfObjectCode.AttributeDefinition:
-                    entityObject = this.ReadAttributeDefinition();
+                    dxfObject = this.ReadAttributeDefinition();
                     break;
                 case DxfObjectCode.Circle:
-                    entityObject = this.ReadCircle();
+                    dxfObject = this.ReadCircle();
                     break;
                 case DxfObjectCode.Dimension:
-                    entityObject = this.ReadDimension(isBlockEntity);
+                    dxfObject = this.ReadDimension(isBlockEntity);
                     break;
                 case DxfObjectCode.Ellipse:
-                    entityObject = this.ReadEllipse();
+                    dxfObject = this.ReadEllipse();
                     break;
                 case DxfObjectCode.Face3d:
-                    entityObject = this.ReadFace3d();
+                    dxfObject = this.ReadFace3d();
                     break;
                 case DxfObjectCode.Hatch:
-                    entityObject = this.ReadHatch();
+                    dxfObject = this.ReadHatch();
                     break;
                 case DxfObjectCode.Image:
-                    entityObject = this.ReadImage();
+                    dxfObject = this.ReadImage();
                     break;
                 case DxfObjectCode.Insert:
-                    entityObject = this.ReadInsert(isBlockEntity);
+                    dxfObject = this.ReadInsert(isBlockEntity);
                     break;
                 case DxfObjectCode.Leader:
-                    entityObject = this.ReadLeader();
+                    dxfObject = this.ReadLeader();
                     break;
                 case DxfObjectCode.Line:
-                    entityObject = this.ReadLine();
+                    dxfObject = this.ReadLine();
                     break;
                 case DxfObjectCode.LightWeightPolyline:
-                    entityObject = this.ReadLwPolyline();
+                    dxfObject = this.ReadLwPolyline();
                     break;
                 case DxfObjectCode.Mesh:
-                    entityObject = this.ReadMesh();
+                    dxfObject = this.ReadMesh();
                     break;
                 case DxfObjectCode.MLine:
-                    entityObject = this.ReadMLine();
+                    dxfObject = this.ReadMLine();
                     break;
                 case DxfObjectCode.MText:
-                    entityObject = this.ReadMText();
+                    dxfObject = this.ReadMText();
                     break;
                 case DxfObjectCode.Point:
-                    entityObject = this.ReadPoint();
+                    dxfObject = this.ReadPoint();
                     break;
                 case DxfObjectCode.Polyline:
-                    entityObject = this.ReadPolyline();
+                    dxfObject = this.ReadPolyline();
                     break;
                 case DxfObjectCode.Ray:
-                    entityObject = this.ReadRay();
+                    dxfObject = this.ReadRay();
                     break;
                 case DxfObjectCode.Text:
-                    entityObject = this.ReadText();
+                    dxfObject = this.ReadText();
                     break;
                 case DxfObjectCode.Tolerance:
-                    entityObject = this.ReadTolerance();
+                    dxfObject = this.ReadTolerance();
                     break;
                 case DxfObjectCode.Trace:
-                    entityObject = this.ReadTrace();
+                    dxfObject = this.ReadTrace();
                     break;
                 case DxfObjectCode.Shape:
-                    entityObject = this.ReadShape();
+                    dxfObject = this.ReadShape();
                     break;
                 case DxfObjectCode.Solid:
-                    entityObject = this.ReadSolid();
+                    dxfObject = this.ReadSolid();
                     break;
                 case DxfObjectCode.Spline:
-                    entityObject = this.ReadSpline();
+                    dxfObject = this.ReadSpline();
                     break;
                 case DxfObjectCode.UnderlayDgn:
-                    entityObject = this.ReadUnderlay();
+                    dxfObject = this.ReadUnderlay();
                     break;
                 case DxfObjectCode.UnderlayDwf:
-                    entityObject = this.ReadUnderlay();
+                    dxfObject = this.ReadUnderlay();
                     break;
                 case DxfObjectCode.UnderlayPdf:
-                    entityObject = this.ReadUnderlay();
+                    dxfObject = this.ReadUnderlay();
                     break;
                 case DxfObjectCode.Viewport:
-                    entityObject = this.ReadViewport();
+                    dxfObject = this.ReadViewport();
                     break;
                 case DxfObjectCode.XLine:
-                    entityObject = this.ReadXLine();
+                    dxfObject = this.ReadXLine();
                     break;
                 case DxfObjectCode.Wipeout:
-                    entityObject = this.ReadWipeout();
+                    dxfObject = this.ReadWipeout();
                     break;
                 case DxfObjectCode.AcadTable:
-                    entityObject = this.ReadAcadTable(isBlockEntity);
+                    dxfObject = this.ReadAcadTable(isBlockEntity);
                     break;
                 default:
                     this.ReadUnknowEntity();
                     return null;
             }
 
-            if (entityObject == null || string.IsNullOrEmpty(handle))
+            if (dxfObject == null || string.IsNullOrEmpty(handle))
                 return null;
 
-            entityObject.Handle = handle;
-            entityObject.Layer = layer;
-            entityObject.Color = color;
-            entityObject.Linetype = linetype;
-            entityObject.Lineweight = lineweight;
-            entityObject.LinetypeScale = linetypeScale;
-            entityObject.IsVisible = isVisible;
-            entityObject.Transparency = transparency;
+            dxfObject.Handle = handle;
+
+            EntityObject entity = dxfObject as EntityObject;
+            if (entity != null)
+            {
+                entity.Layer = layer;
+                entity.Color = color;
+                entity.Linetype = linetype;
+                entity.Lineweight = lineweight;
+                entity.LinetypeScale = linetypeScale;
+                entity.IsVisible = isVisible;
+                entity.Transparency = transparency;
+            }
+
+            AttributeDefinition attDef = dxfObject as AttributeDefinition;
+            if (attDef != null)
+            {
+                attDef.Layer = layer;
+                attDef.Color = color;
+                attDef.Linetype = linetype;
+                attDef.Lineweight = lineweight;
+                attDef.LinetypeScale = linetypeScale;
+                attDef.IsVisible = isVisible;
+                attDef.Transparency = transparency;
+            }
 
             // the entities list will be processed at the end
             // entities that belong to a block definition are added at the same time of the block 
             if (!isBlockEntity)
-                this.entityList.Add(entityObject, owner);
+                this.entityList.Add(dxfObject, owner);
 
-            return entityObject;
+            return dxfObject;
         }
 
         private Insert ReadAcadTable(bool isBlockEntity)
@@ -3685,7 +4019,7 @@ namespace netDxf.IO
                 Elevation = elevation,
                 Normal = normal,
                 Offset = new Vector2(ocsOffset.X, ocsOffset.Y),
-                TextVerticalPosition = LeaderTextVerticalPosition.Above
+                HasHookline = hasHookline
             };
 
             leader.XData.AddRange(xData);
@@ -4399,7 +4733,7 @@ namespace netDxf.IO
 
         private Dimension ReadDimension(bool isBlockEntity)
         {
-            string drawingBlockName = null;
+            string drawingBlockName = string.Empty;
             Block drawingBlock = null;
             Vector3 defPoint = Vector3.Zero;
             Vector3 midtxtPoint = Vector3.Zero;
@@ -4408,10 +4742,12 @@ namespace netDxf.IO
             MTextAttachmentPoint attachmentPoint = MTextAttachmentPoint.BottomCenter;
             MTextLineSpacingStyle lineSpacingStyle = MTextLineSpacingStyle.AtLeast;
             DimensionStyle style = DimensionStyle.Default;
-            double dimRot = 0.0;
             double lineSpacingFactor = 1.0;
             bool dimInfo = false;
+            double dimRot = 0.0;
+            double textRotation = 0.0;
             string userText = null;
+            bool userTextPosition = false;
 
             this.chunk.Next();
             while (!dimInfo)
@@ -4480,8 +4816,11 @@ namespace netDxf.IO
                         this.chunk.Next();
                         break;
                     case 51:
-                        // even if the documentation says that code 51 is optional, rotated ordinate dimensions will not work correctly is this value is not provided
                         dimRot = 360 - this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 53:
+                        textRotation = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 210:
@@ -4517,14 +4856,19 @@ namespace netDxf.IO
             DimensionTypeFlags type = dimType;
             OrdinateDimensionAxis axis = OrdinateDimensionAxis.Y;
             if (type.HasFlag(DimensionTypeFlags.BlockReference))
+            {
                 type -= DimensionTypeFlags.BlockReference;
-            if (type.HasFlag(DimensionTypeFlags.OrdinteType))
+            }
+            if (type.HasFlag(DimensionTypeFlags.OrdinateType))
             {
                 axis = OrdinateDimensionAxis.X;
-                type -= DimensionTypeFlags.OrdinteType;
+                type -= DimensionTypeFlags.OrdinateType;
             }
             if (type.HasFlag(DimensionTypeFlags.UserTextPosition))
+            {
+                userTextPosition = true;
                 type -= DimensionTypeFlags.UserTextPosition;
+            }
 
             Dimension dim;
             switch (type)
@@ -4536,10 +4880,10 @@ namespace netDxf.IO
                     dim = this.ReadLinearDimension(defPoint, normal);
                     break;
                 case DimensionTypeFlags.Radius:
-                    dim = this.ReadRadialDimension(defPoint, midtxtPoint, normal);
+                    dim = this.ReadRadialDimension(defPoint, normal);
                     break;
                 case DimensionTypeFlags.Diameter:
-                    dim = this.ReadDiametricDimension(defPoint, midtxtPoint, normal);
+                    dim = this.ReadDiametricDimension(defPoint, normal);
                     break;
                 case DimensionTypeFlags.Angular3Point:
                     dim = this.ReadAngular3PointDimension(defPoint, normal);
@@ -4551,7 +4895,7 @@ namespace netDxf.IO
                     dim = this.ReadOrdinateDimension(defPoint, axis, normal, dimRot);
                     break;
                 default:
-                    throw new ArgumentException("The dimension type: " + type + " is not implemented or unknown.");
+                    throw new ArgumentException(string.Format("The dimension type: {0} is not implemented or unknown.", type));
             }
 
             if (dim == null)
@@ -4559,12 +4903,13 @@ namespace netDxf.IO
 
             dim.Style = style;
             dim.Block = drawingBlock;
-            dim.DefinitionPoint = defPoint;
-            dim.MidTextPoint = midtxtPoint;
+            dim.TextReferencePoint = new Vector2(midtxtPoint.X, midtxtPoint.Y);
+            dim.TextPositionManuallySet = userTextPosition;
             dim.AttachmentPoint = attachmentPoint;
             dim.LineSpacingStyle = lineSpacingStyle;
             dim.LineSpacingFactor = lineSpacingFactor;
             dim.Normal = normal;
+            dim.TextRotation = textRotation;
             dim.UserText = userText;
 
             if (isBlockEntity)
@@ -4573,14 +4918,31 @@ namespace netDxf.IO
             return dim;
         }
 
-        private List<DimensionStyleOverride> ReadDimensionStyleOverrideXData(XData xDataOverrides, EntityObject entity)
+        private List<DimensionStyleOverride> ReadDimensionStyleOverrideXData(XData xDataOverrides)
         {
             List<DimensionStyleOverride> overrides = new List<DimensionStyleOverride>();
             IEnumerator<XDataRecord> records = xDataOverrides.XDataRecord.GetEnumerator();
+            bool[] suppress;
+
+            short dimtfill = 0;
+            AciColor dimtfillclrt = null;
             short dimzin = -1;
             short dimazin = -1;
-            bool dimsd1 = false;
-            bool dimsd2 = false;
+
+            short dimaltu = 0;
+            short dimaltz = -1;
+
+            short dimtol = -1;
+            short dimlim = -1;
+            double dimtm = 0;
+            short dimtzin = -1;
+            short dimalttz = -1;
+
+            bool dimsah = true;
+            string handleDimblk = string.Empty;
+            string handleDimblk1 = string.Empty;
+            string handleDimblk2 = string.Empty;
+
             while (records.MoveNext())
             {
                 XDataRecord data = records.Current;
@@ -4616,13 +4978,346 @@ namespace netDxf.IO
                         // the first is the dimension style property to override, the second is the new value
                         switch (styleOverrideCode)
                         {
-                            case 176: // DimensionStyleOverrideType.DIMCLRD:
+                            case 3: // DIMPOST
+                                if (data.Code != XDataCode.String)
+                                    return overrides; // premature end
+                                string dimpost = this.DecodeEncodedNonAsciiCharacters((string)data.Value);
+                                string[] textPrefixSuffix = GetDimStylePrefixAndSuffix(dimpost, '<', '>');
+                                if (!string.IsNullOrEmpty(textPrefixSuffix[0]))
+                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimPrefix, textPrefixSuffix[0]));
+                                if (!string.IsNullOrEmpty(textPrefixSuffix[1]))
+                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimSuffix, textPrefixSuffix[1]));
+                                break;
+                            case 4: // DIMAPOST
+                                if (data.Code != XDataCode.String)
+                                    return overrides; // premature end
+                                string dimapost = this.DecodeEncodedNonAsciiCharacters((string)data.Value);
+                                string[] altTextPrefixSuffix = GetDimStylePrefixAndSuffix(dimapost, '[', ']');
+                                if (!string.IsNullOrEmpty(altTextPrefixSuffix[0]))
+                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimPrefix, altTextPrefixSuffix[0]));
+                                if (!string.IsNullOrEmpty(altTextPrefixSuffix[1]))
+                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimSuffix, altTextPrefixSuffix[1]));
+                                break;
+                            case 40: // DIMSCALE
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimScaleOverall, (double) data.Value));
+                                break;
+                            case 41: // DIMASZ:
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ArrowSize, (double) data.Value));
+                                break;
+                            case 42: // DIMEXO
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineOffset, (double) data.Value));
+                                break;
+                            case 43: // DIMDLI
+                                // not used in overrides
+                                break;
+                            case 44: // DIMEXE
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineExtend, (double) data.Value));
+                                break;
+                            case 45: // DIMRND
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimRoundoff, (short) data.Value));
+                                break;
+                            case 46: // DIMDLE
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineExtend, (double) data.Value));
+                                break;
+                            case 47: // DIMTP
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesUpperLimit, (double) data.Value));
+                                break;
+                            case 48: // DIMTM
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                dimtm = (double)data.Value;
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesLowerLimit, dimtm));
+                                break;                         
+                            case 49: // DIMFXL
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineFixedLength, (double) data.Value));
+                                break;
+                            case 69: // DIMTFILL
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimtfill = (short)data.Value;
+                                break;
+                            case 70: // DIMTFILLCLRT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimtfillclrt = AciColor.FromCadIndex((short)data.Value);
+                                break;
+                            case 71: // DIMTOLL
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimtol = (short)data.Value;
+                                break;
+                            case 72: // DIMLIN
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimlim = (short)data.Value;
+                                break;
+                            case 73: // DIMTIH
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add( new DimensionStyleOverride(
+                                    DimensionStyleOverrideType.TextInsideAlign, (short) data.Value != 0));
+                                break;
+                            case 74: // DIMTOH
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(
+                                    DimensionStyleOverrideType.TextOutsideAlign, (short)data.Value != 0));
+                                break;
+                            case 75: // DIMSE1
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine1Off, (short)data.Value != 0));
+                                break;
+                            case 76: // DIMSE2
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine2Off, (short)data.Value != 0));
+                                break;
+                            case 77: // DIMTAD
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add( new DimensionStyleOverride(DimensionStyleOverrideType.TextVerticalPlacement, (DimensionStyleTextVerticalPlacement)(short)data.Value));
+                                break;
+                            case 78: // DIMZIN
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimzin = (short)data.Value;
+                                break;
+                            case 79: // DIMAZIN
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimazin = (short)data.Value;
+                                break;
+                            case 140: // DIMTXT
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextHeight, (double) data.Value));
+                                break;
+                            case 141: // DIMCEN
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.CenterMarkSize, (double) data.Value));
+                                break;
+                            case 143: // DIMALTF
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsMultiplier, (double) data.Value));
+                                break;
+                            case 144: // DIMLFAC:
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimScaleLinear, (double)data.Value));
+                                break;
+                            case 145: // DIMTVP
+                               // not used
+                               break;
+                            case 146: // DIMTFAC
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextFractionHeightScale, (double) data.Value));
+                                break;
+                            case 147: // DIMGAP
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextOffset, (double) data.Value));
+                                break;
+                            case 148: // DIMALTRND
+                                if (data.Code != XDataCode.Real)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsRoundoff, (double) data.Value));
+                                break;
+                            case 170: // DIMALT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsEnabled, (short) data.Value != 0));
+                                break;
+                            case 171: // DIMALTD
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthPrecision, (short) data.Value));
+                                break;
+                            case 172: // DIMTOFL
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FitDimLineForce, (short) data.Value != 0));
+                                break;
+                            case 173: // DIMSAH
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimsah = (short) data.Value != 0;
+                                break;
+                            case 174: // DIMTIX
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FitTextInside, (short) data.Value != 0));
+                                break;
+                            case 175: // DIMSOXD
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FitDimLineInside,(short) data.Value != 0));
+                                break;
+                            case 176: // DIMCLRD:
                                 if (data.Code != XDataCode.Int16)
                                     return overrides; // premature end
                                 overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineColor, AciColor.FromCadIndex((short) data.Value)));
                                 break;
-
-                            case 345: // DimensionStyleOverrideType.DIMLTYPE:
+                            case 177: // DIMCLRE
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineColor, AciColor.FromCadIndex((short) data.Value)));
+                                break;
+                            case 178: // DIMCLRT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextColor, AciColor.FromCadIndex((short) data.Value)));
+                                break;
+                            case 179: // DIMADEC
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AngularPrecision, (short) data.Value));
+                                break;
+                            case 271: // DIMDEC
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.LengthPrecision, (short) data.Value));
+                                break;
+                            case 272: // DIMTDEC
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesPrecision, (short) data.Value));
+                                break;
+                            case 273: // DIMALTU
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimaltu = (short)data.Value;
+                                break;
+                            case 274: // DIMALTTD
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesAlternatePrecision, (short) data.Value));
+                                break;
+                            case 275: // DIMAUNIT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimAngularUnits, (AngleUnitType) (short) data.Value));
+                                break;
+                            case 276: // DIMFRAC
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FractionalType, (FractionFormatType) (short) data.Value));
+                                break;
+                            case 277: // DIMLUNIT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLengthUnits, (LinearUnitType) (short) data.Value));
+                                break;
+                            case 278: // DIMDSEP
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DecimalSeparator, (char) (short) data.Value));
+                                break;
+                            case 279: // DIMTMOVE
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FitTextMove, (DimensionStyleFitTextMove) (short) data.Value));
+                                break;
+                            case 280: // DIMJUST
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextHorizontalPlacement, (DimensionStyleTextHorizontalPlacement) (short) data.Value));
+                                break;
+                            case 281: // DIMSD1
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLine1Off, (short) data.Value != 0));
+                                break;
+                            case 282: // DIMSD2
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLine2Off, (short) data.Value != 0));
+                                break;
+                            case 283: // DIMTOLJ
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesVerticalPlacement, (DimensionStyleTolerancesVerticalPlacement) (short) data.Value));
+                                break;
+                            case 284: // DIMTZIN
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimtzin = (short) data.Value;
+                                break;
+                            case 285: // DIMALTZ
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimaltz = (short) data.Value;
+                                break;
+                            case 286: // DIMALTTZ
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                dimalttz = (short) data.Value;
+                                break;
+                            case 288: // DIMUPT
+                                // not used
+                                break;
+                            case 289: // AIMATFIT
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FitOptions, (DimensionStyleFitOptions) (short) data.Value));
+                                break;
+                            case 290: // DIMFXLON
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineFixed, (short) data.Value != 0));
+                                break;
+                            case 294: // DIMTXTDIRECTION
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextDirection, (DimensionStyleTextDirection) (short) data.Value));
+                                break;
+                            case 340: // DIMTXSTY
+                                if (data.Code != XDataCode.DatabaseHandle)
+                                    return overrides; // premature end
+                                TextStyle dimtxtsty = this.doc.GetObjectByHandle((string) data.Value) as TextStyle;
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextStyle, dimtxtsty == null ? this.doc.TextStyles[TextStyle.DefaultName] : dimtxtsty));
+                                break;
+                            case 341: // DIMLDRBLK
+                                if (data.Code != XDataCode.DatabaseHandle)
+                                    return overrides; // premature end
+                                BlockRecord dimldrblk = this.doc.GetObjectByHandle((string) data.Value) as BlockRecord;
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.LeaderArrow, dimldrblk == null ? null : this.doc.Blocks[dimldrblk.Name]));
+                                break;
+                            case 342: // DIMBLK used if DIMSAH is false
+                                if (data.Code != XDataCode.DatabaseHandle)
+                                    return overrides; // premature end
+                                handleDimblk = (string) data.Value;
+                                break;
+                            case 343: // DIMBLK1
+                                if (data.Code != XDataCode.DatabaseHandle)
+                                    return overrides; // premature end
+                                handleDimblk1 = (string) data.Value;
+                                break;
+                            case 344: // DIMBLK2
+                                if (data.Code != XDataCode.DatabaseHandle)
+                                    return overrides; // premature end
+                                handleDimblk2 = (string) data.Value;
+                                break;
+                            case 345: // DIMLTYPE
                                 if (data.Code != XDataCode.DatabaseHandle)
                                     return overrides; // premature end
                                 Linetype dimltype = this.doc.GetObjectByHandle((string) data.Value) as Linetype;
@@ -4630,38 +5325,7 @@ namespace netDxf.IO
                                     dimltype = this.doc.Linetypes[Linetype.DefaultName];
                                 overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineLinetype, dimltype));
                                 break;
-
-                            case 371: // DimensionStyleOverrideType.DIMLWD:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineLineweight, (Lineweight) (short) data.Value));
-                                break;
-
-                            case 281:// DimensionStyleOverrideType.DIMSD1:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                dimsd1 = (short) data.Value != 0;
-                                break;
-
-                            case 282:// DimensionStyleOverrideType.DIMSD2:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                dimsd2 = (short)data.Value != 0;
-                                break;
-
-                            case 46: // DimensionStyleOverrideType.DIMDLE:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineExtend, (double) data.Value));
-                                break;
-
-                            case 177: // DimensionStyleOverrideType.DIMCLRE:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineColor, AciColor.FromCadIndex((short) data.Value)));
-                                break;
-
-                            case 346: // DimensionStyleOverrideType.DIMLTEX1:
+                            case 346: // DIMLTEX1
                                 if (data.Code != XDataCode.DatabaseHandle)
                                     return overrides; // premature end
                                 Linetype dimltex1 = this.doc.GetObjectByHandle((string) data.Value) as Linetype;
@@ -4669,8 +5333,7 @@ namespace netDxf.IO
                                     dimltex1 = this.doc.Linetypes[Linetype.DefaultName];
                                 overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine1Linetype, dimltex1));
                                 break;
-
-                            case 347: // DimensionStyleOverrideType.DIMLTEX2:
+                            case 347: // DIMLTEX2
                                 if (data.Code != XDataCode.DatabaseHandle)
                                     return overrides; // premature end
                                 Linetype dimltex2 = this.doc.GetObjectByHandle((string) data.Value) as Linetype;
@@ -4678,189 +5341,15 @@ namespace netDxf.IO
                                     dimltex2 = this.doc.Linetypes[Linetype.DefaultName];
                                 overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine2Linetype, dimltex2));
                                 break;
-
-                            case 372: // DimensionStyleOverrideType.DIMLWE:
+                            case 371: // DIMLWD
+                                if (data.Code != XDataCode.Int16)
+                                    return overrides; // premature end
+                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineLineweight, (Lineweight) (short) data.Value));
+                                break;
+                            case 372: // DIMLWE
                                 if (data.Code != XDataCode.Int16)
                                     return overrides; // premature end
                                 overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineLineweight, (Lineweight) (short) data.Value));
-                                break;
-
-                            case 75: // DimensionStyleOverrideType.DIMSE1:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add((short) data.Value == 0
-                                    ? new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine1Off, false)
-                                    : new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine1Off, true));
-                                break;
-
-                            case 76: // DimensionStyleOverrideType.DIMSE2:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add((short) data.Value == 0
-                                    ? new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine2Off, false)
-                                    : new DimensionStyleOverride(DimensionStyleOverrideType.ExtLine2Off, true));
-                                break;
-
-                            case 42: // DimensionStyleOverrideType.DIMEXO:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineOffset, (double) data.Value));
-                                break;
-
-                            case 44: // DimensionStyleOverrideType.DIMEXE:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ExtLineExtend, (double) data.Value));
-                                break;
-
-                            case 41: // DimensionStyleOverrideType.DIMASZ:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.ArrowSize, (double) data.Value));
-                                break;
-
-                            case 141: // DimensionStyleOverrideType.DIMCEN:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.CenterMarkSize, (double) data.Value));
-                                break;
-
-                            case 341: // DimensionStyleOverrideType.DIMLDRBLK:
-                                if (data.Code != XDataCode.DatabaseHandle)
-                                    return overrides; // premature end
-                                BlockRecord dimldrblk = this.doc.GetObjectByHandle((string) data.Value) as BlockRecord;
-                                overrides.Add(dimldrblk == null
-                                    ? new DimensionStyleOverride(DimensionStyleOverrideType.LeaderArrow, null)
-                                    : new DimensionStyleOverride(DimensionStyleOverrideType.LeaderArrow, this.doc.Blocks[dimldrblk.Name]));
-                                break;
-
-                            case 343: // DimensionStyleOverrideType.DIMBLK1:
-                                if (data.Code != XDataCode.DatabaseHandle)
-                                    return overrides; // premature end
-                                BlockRecord dimblk1 = this.doc.GetObjectByHandle((string) data.Value) as BlockRecord;
-                                overrides.Add(dimblk1 == null
-                                    ? new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow1, null)
-                                    : new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow1, this.doc.Blocks[dimblk1.Name]));
-                                break;
-
-                            case 344: // DimensionStyleOverrideType.DIMBLK2:
-                                if (data.Code != XDataCode.DatabaseHandle)
-                                    return overrides; // premature end
-                                BlockRecord dimblk2 = this.doc.GetObjectByHandle((string) data.Value) as BlockRecord;
-                                overrides.Add(dimblk2 == null
-                                    ? new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow2, null)
-                                    : new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow2, this.doc.Blocks[dimblk2.Name]));
-                                break;
-
-                            case 340: // DimensionStyleOverrideType.DIMTXSTY:
-                                if (data.Code != XDataCode.DatabaseHandle)
-                                    return overrides; // premature end
-                                TextStyle dimtxtsty = this.doc.GetObjectByHandle((string) data.Value) as TextStyle;
-                                if (dimtxtsty == null)
-                                    dimtxtsty = this.doc.TextStyles[TextStyle.DefaultName];
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextStyle, dimtxtsty));
-                                break;
-
-                            case 178: // DimensionStyleOverrideType.DIMCLRT:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextColor, AciColor.FromCadIndex((short) data.Value)));
-                                break;
-
-                            case 140: // DimensionStyleOverrideType.DIMTXT:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextHeight, (double) data.Value));
-                                break;
-
-                            case 147: // DimensionStyleOverrideType.DIMGAP:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextOffset, Math.Abs((double) data.Value)));
-                                break;
-
-                            case 40: // DimensionStyleOverrideType.DIMSCALE:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimScaleOverall, (double) data.Value));
-                                break;
-
-                            case 179: // DimensionStyleOverrideType.DIMADEC:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AngularPrecision, (short) data.Value));
-                                break;
-
-                            case 271: // DimensionStyleOverrideType.DIMDEC:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.LengthPrecision, (short) data.Value));
-                                break;
-
-                            case 3: // DimensionStyleOverrideType.DIMPOST:
-                                if (data.Code != XDataCode.String)
-                                    return overrides; // premature end
-                                string dimpost = this.DecodeEncodedNonAsciiCharacters((string) data.Value);
-                                string[] textPrefixSuffix = GetDimStylePrefixAndSuffix(dimpost);
-
-                                if (!string.IsNullOrEmpty(textPrefixSuffix[0]))
-                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimPrefix, textPrefixSuffix[0]));
-                                if (!string.IsNullOrEmpty(textPrefixSuffix[1]))
-                                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimSuffix, textPrefixSuffix[1]));
-
-                                break;
-
-                            case 278: // DimensionStyleOverrideType.DIMDSEP:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DecimalSeparator, (char) (short) data.Value));
-                                break;
-
-                            case 144: // DimensionStyleOverrideType.DIMLFAC:
-                                if (data.Code != XDataCode.Real)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimScaleLinear, (double) data.Value));
-                                break;
-
-                            case 277: // DimensionStyleOverrideType.DIMLUNIT:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLengthUnits, (LinearUnitType) (short) data.Value));
-                                break;
-
-                            case 275: // DimensionStyleOverrideType.DIMAUNIT:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimAngularUnits, (AngleUnitType) (short) data.Value));
-                                break;
-
-                            case 276: // DimensionStyleOverrideType.DIMFRAC:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.FractionalType, (FractionFormatType) (short) data.Value));
-                                break;
-                            case 78: // DIMZIN
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                dimzin = (short) data.Value;
-                                break;
-
-                            case 79: // DIMAZIN
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                dimazin = (short) data.Value;
-                                break;
-
-                            case 45: // DimensionStyleOverrideType.DIMRND:
-                                if (data.Code != XDataCode.Int16)
-                                    return overrides; // premature end
-                                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimRoundoff, (short) data.Value));
-                                break;
-                            case 70: // this code is only required by Leader entities
-                                Leader leader = entity as Leader;
-                                if (leader == null)
-                                    break;
-                                leader.TextVerticalPosition = (LeaderTextVerticalPosition) (short) data.Value;
                                 break;
                         }
 
@@ -4872,58 +5361,41 @@ namespace netDxf.IO
                 }
             }
 
-            overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimLineOff, dimsd1 && dimsd2));
+            // dimension text fill color
+            overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TextFillColor, dimtfill == 2 ? dimtfillclrt : null));
 
+            // dim arrows
+            if (dimsah)
+            {
+                if (!string.IsNullOrEmpty(handleDimblk1))
+                {
+                    BlockRecord dimblk1 = this.doc.GetObjectByHandle(handleDimblk1) as BlockRecord;
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow1, dimblk1 == null ? null : this.doc.Blocks[dimblk1.Name]));
+                }
+                if (!string.IsNullOrEmpty(handleDimblk2))
+                {
+                    BlockRecord dimblk2 = this.doc.GetObjectByHandle(handleDimblk2) as BlockRecord;
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow2, dimblk2 == null ? null : this.doc.Blocks[dimblk2.Name]));
+                }
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(handleDimblk))
+                {
+                    BlockRecord dimblk = this.doc.GetObjectByHandle(handleDimblk) as BlockRecord;
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow1, dimblk == null ? null : this.doc.Blocks[dimblk.Name]));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.DimArrow2, dimblk == null ? null : this.doc.Blocks[dimblk.Name]));
+                }
+            }
+
+            // suppress linear zeros
             if (dimzin >= 0)
             {
-                // suppress leading and/or trailing zeros
-                if (12 - dimzin <= 0)
-                {
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearLeadingZeros, true));
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearTrailingZeros, true));
-                    dimzin -= 12;
-                }
-                else if (8 - dimzin <= 0)
-                {
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearLeadingZeros, false));
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearTrailingZeros, true));
-                    dimzin -= 8;
-                }
-                else if (4 - dimzin <= 0)
-                {
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearLeadingZeros, true));
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearTrailingZeros, false));
-                    dimzin -= 4;
-                }
-                else
-                {
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearLeadingZeros, false));
-                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearTrailingZeros, false));
-                }
-                // suppress feet and/or inches
-                switch (dimzin)
-                {
-                    case 0:
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, true));
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, true));
-                        break;
-                    case 1:
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, false));
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, false));
-                        break;
-                    case 2:
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, false));
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, true));
-                        break;
-                    case 3:
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, true));
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, false));
-                        break;
-                    default:
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, true));
-                        overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, true));
-                        break;
-                }
+                suppress = GetLinearZeroesSuppression(dimzin);
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearLeadingZeros, suppress[0]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressLinearTrailingZeros, suppress[1]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroFeet, suppress[2]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressZeroInches, suppress[3]));
             }
 
             // suppress angular leading and/or trailing zeros
@@ -4945,6 +5417,89 @@ namespace netDxf.IO
                     overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressAngularLeadingZeros, true));
                     overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.SuppressAngularTrailingZeros, true));
                     break;
+            }
+
+            // alternate units format
+            switch (dimaltu)
+            {
+                case 1:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Scientific));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+                case 2:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Decimal));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+                case 3:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Engineering));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+                case 4:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Architectural));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, true));
+                    break;
+                case 5:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Fractional));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, true));
+                    break;
+                case 6:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Architectural));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+                case 7:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Fractional));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+                default:
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsLengthUnits, LinearUnitType.Scientific));
+                    overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsStackedUnits, false));
+                    break;
+            }
+
+            // suppress leading and/or trailing zeros
+            if (dimaltz >= 0)
+            {
+                suppress = GetLinearZeroesSuppression(dimaltz);
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsSuppressLinearLeadingZeros, suppress[0]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsSuppressLinearTrailingZeros, suppress[1]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsSuppressZeroFeet, suppress[2]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.AltUnitsSuppressZeroInches, suppress[3]));
+            }
+
+            // suppress leading and/or trailing zeros
+            if (dimtzin >= 0)
+            {
+                suppress = GetLinearZeroesSuppression(dimtzin);
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesSuppressLinearLeadingZeros, suppress[0]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesSuppressLinearTrailingZeros, suppress[1]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesSuppressZeroFeet, suppress[2]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesSuppressZeroInches, suppress[3]));
+            }
+
+            // suppress leading and/or trailing zeros
+            if (dimalttz >= 0)
+            {
+                suppress = GetLinearZeroesSuppression(dimalttz);
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesAltSuppressLinearLeadingZeros, suppress[0]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesAltSuppressLinearTrailingZeros, suppress[1]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesAltSuppressZeroFeet, suppress[2]));
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesAltSuppressZeroInches, suppress[3]));
+            }
+
+            if (dimtol == 0 && dimlim == 0)
+            {
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesDisplayMethod, DimensionStyleTolerancesDisplayMethod.None));
+            }
+            else if (dimtol == 1 && dimlim == 0)
+            {
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesDisplayMethod,
+                    Math.Abs(dimtm) > 0
+                        ? DimensionStyleTolerancesDisplayMethod.Deviation
+                        : DimensionStyleTolerancesDisplayMethod.Symmetrical));
+            }
+            else if (dimtol == 0 && dimlim == 1)
+            {
+                overrides.Add(new DimensionStyleOverride(DimensionStyleOverrideType.TolerancesDisplayMethod, DimensionStyleTolerancesDisplayMethod.Limits));
             }
 
             return overrides;
@@ -5091,15 +5646,14 @@ namespace netDxf.IO
                 Normal = normal
             };
 
-            Vector2 point = new Vector2(ocsPoints[2].X, ocsPoints[2].Y);
-            entity.SetDimensionLinePosition(point);
+            entity.SetDimensionLinePosition(new Vector2(ocsPoints[2].X, ocsPoints[2].Y));
 
             entity.XData.AddRange(xData);
 
             return entity;
         }
 
-        private RadialDimension ReadRadialDimension(Vector3 defPoint, Vector3 midtxtPoint, Vector3 normal)
+        private RadialDimension ReadRadialDimension(Vector3 defPoint, Vector3 normal)
         {
             Vector3 circunferenceRef = Vector3.Zero;
             List<XData> xData = new List<XData>();
@@ -5143,14 +5697,13 @@ namespace netDxf.IO
                 },
                 normal, CoordinateSystem.World, CoordinateSystem.Object);
 
-            double offset = Vector3.Distance(defPoint, midtxtPoint);
             RadialDimension entity = new RadialDimension
             {
-                CenterPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
                 ReferencePoint = new Vector2(ocsPoints[0].X, ocsPoints[0].Y),
+                CenterPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
+                DefinitionPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
                 Elevation = ocsPoints[1].Z,
-                Normal = normal,
-                Offset = offset
+                Normal = normal
             };
 
             entity.XData.AddRange(xData);
@@ -5158,7 +5711,7 @@ namespace netDxf.IO
             return entity;
         }
 
-        private DiametricDimension ReadDiametricDimension(Vector3 defPoint, Vector3 midtxtPoint, Vector3 normal)
+        private DiametricDimension ReadDiametricDimension(Vector3 defPoint, Vector3 normal)
         {
             Vector3 circunferenceRef = Vector3.Zero;
             List<XData> xData = new List<XData>();
@@ -5203,14 +5756,13 @@ namespace netDxf.IO
                 normal, CoordinateSystem.World, CoordinateSystem.Object);
 
             Vector3 center = Vector3.MidPoint(ocsPoints[0], ocsPoints[1]);
-            double offset = Vector3.Distance(center, midtxtPoint);
             DiametricDimension entity = new DiametricDimension
             {
                 CenterPoint = new Vector2(center.X, center.Y),
                 ReferencePoint = new Vector2(ocsPoints[0].X, ocsPoints[0].Y),
+                DefinitionPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
                 Elevation = ocsPoints[1].Z,
-                Normal = normal,
-                Offset = offset
+                Normal = normal
             };
 
             entity.XData.AddRange(xData);
@@ -5291,9 +5843,11 @@ namespace netDxf.IO
                 CenterPoint = new Vector2(ocsPoints[0].X, ocsPoints[0].Y),
                 StartPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
                 EndPoint = new Vector2(ocsPoints[2].X, ocsPoints[2].Y),
+                Elevation = ocsPoints[3].Z
             };
 
             entity.SetDimensionLinePosition(new Vector2(ocsPoints[3].X, ocsPoints[3].Y));
+
             entity.XData.AddRange(xData);
 
             return entity;
@@ -5395,10 +5949,11 @@ namespace netDxf.IO
                 EndFirstLine = endL0,
                 StartSecondLine = startL1,
                 EndSecondLine = endL1,
-                Elevation = arcDefinitionPoint.Z
+                Elevation = ocsPoints[3].Z
             };
 
             entity.SetDimensionLinePosition(new Vector2(arcDefinitionPoint.X, arcDefinitionPoint.Y));
+
             entity.XData.AddRange(xData);
 
             return entity;
@@ -5451,26 +6006,23 @@ namespace netDxf.IO
                         break;
                 }
             }
-            Vector3 localPoint = MathHelper.Transform(defPoint, normal, CoordinateSystem.World, CoordinateSystem.Object);
 
-            Vector2 refCenter = new Vector2(localPoint.X, localPoint.Y);
-
-            localPoint = MathHelper.Transform(firstPoint, normal, CoordinateSystem.World, CoordinateSystem.Object);
-
-            Vector2 firstRef = MathHelper.Transform(new Vector2(localPoint.X, localPoint.Y) - refCenter, rotation*MathHelper.DegToRad, CoordinateSystem.World, CoordinateSystem.Object);
-
-            localPoint = MathHelper.Transform(secondPoint, normal, CoordinateSystem.World, CoordinateSystem.Object);
-            Vector2 secondRef = MathHelper.Transform(new Vector2(localPoint.X, localPoint.Y) - refCenter, rotation*MathHelper.DegToRad, CoordinateSystem.World, CoordinateSystem.Object);
-
-            double length = axis == OrdinateDimensionAxis.X ? secondRef.Y - firstRef.Y : secondRef.X - firstRef.X;
+            IList<Vector3> ocsPoints = MathHelper.Transform(
+                new[]
+                {
+                    firstPoint, secondPoint, defPoint
+                },
+                normal, CoordinateSystem.World, CoordinateSystem.Object);
 
             OrdinateDimension entity = new OrdinateDimension
             {
-                Origin = refCenter,
-                ReferencePoint = firstRef,
-                Length = length,
+                Origin = new Vector2(ocsPoints[2].X, ocsPoints[2].Y),
                 Rotation = rotation,
-                Axis = axis
+                Axis = axis,
+                FeaturePoint = new Vector2(ocsPoints[0].X, ocsPoints[0].Y),
+                LeaderEndPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y),
+                DefinitionPoint = new Vector2(ocsPoints[2].X, ocsPoints[2].Y),
+                Elevation = ocsPoints[2].Z,
             };
 
             entity.XData.AddRange(xData);
@@ -8288,6 +8840,7 @@ namespace netDxf.IO
             double wPixel = 0.0;
             double hPixel = 0.0;
             ImageResolutionUnits units = ImageResolutionUnits.Unitless;
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
             while (this.chunk.Code != 0)
@@ -8343,7 +8896,14 @@ namespace netDxf.IO
                         ownerHandle = this.chunk.ReadHex();
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -8365,8 +8925,10 @@ namespace netDxf.IO
             {
                 Handle = handle
             };
+            imageDefinition.XData.AddRange(xData);
 
             this.imgDefHandles.Add(imageDefinition.Handle, imageDefinition);
+
             return imageDefinition;
         }
 
@@ -8410,6 +8972,7 @@ namespace netDxf.IO
             double endAngle = 90.0;
             MLineStyleFlags flags = MLineStyleFlags.None;
             List<MLineStyleElement> elements = new List<MLineStyleElement>();
+            List<XData> xData = new List<XData>();
 
             this.chunk.Next();
             while (this.chunk.Code != 0)
@@ -8457,7 +9020,14 @@ namespace netDxf.IO
                         short numElements = this.chunk.ReadShort();                       
                         elements = this.ReadMLineStyleElements(numElements);
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -8474,6 +9044,7 @@ namespace netDxf.IO
                 EndAngle = endAngle
             };
 
+            style.XData.AddRange(xData);
             return style;
         }
 
@@ -8524,6 +9095,8 @@ namespace netDxf.IO
             bool isUnnamed = true;
             bool isSelectable = true;
             List<string> entities = new List<string>();
+            List<XData> xData = new List<XData>();
+
             this.chunk.Next();
             while (this.chunk.Code != 0)
             {
@@ -8558,7 +9131,14 @@ namespace netDxf.IO
                         entities.Add(entity);
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -8575,6 +9155,7 @@ namespace netDxf.IO
                 IsUnnamed = isUnnamed,
                 IsSelectable = isSelectable
             };
+            group.XData.AddRange(xData);
 
             // the group entities will be processed later
             this.groupEntities.Add(group, entities);
@@ -8598,6 +9179,8 @@ namespace netDxf.IO
             Vector3 ucsXAxis = Vector3.UnitX;
             Vector3 ucsYAxis = Vector3.UnitY;
             string ownerRecordHandle = null;
+            List<XData> xData = new List<XData>();
+
             string dxfCode = this.chunk.ReadString();
             this.chunk.Next();
 
@@ -8738,7 +9321,14 @@ namespace netDxf.IO
                         ownerRecordHandle = this.chunk.ReadHex();
                         this.chunk.Next();
                         break;
+                    case 1001:
+                        string appId = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        XData data = this.ReadXDataRecord(new ApplicationRegistry(appId));
+                        xData.Add(data);
+                        break;
                     default:
+                        if (this.chunk.Code >= 1000 && this.chunk.Code <= 1071)
+                            throw new Exception("The extended data of an entity must start with the application registry code.");
                         this.chunk.Next();
                         break;
                 }
@@ -8776,16 +9366,40 @@ namespace netDxf.IO
                 AssociatedBlock = ownerRecord == null ? null : this.doc.Blocks[ownerRecord.Name]
             };
 
+            layout.XData.AddRange(xData);
             return layout;
         }
 
         private PlotSettings ReadPlotSettings()
         {
-            PlotSettings plot = new PlotSettings();
-            Vector2 paperSize = plot.PaperSize;
-            Vector2 windowBottomLeft = plot.WindowBottomLeft;
-            Vector2 windowUpRight = plot.WindowUpRight;
-            Vector2 paperImageOrigin = plot.PaperImageOrigin;
+            string pageName = string.Empty;
+            string plotterName = "none_device";
+            string paperSizeName = "ISO_A4_(210.00_x_297.00_MM)";
+            string viewName = string.Empty;
+            string styleSheet = string.Empty;
+            double leftMargin = 7.5;
+            double bottomMargin = 20.0;
+            double rightMargin = 7.5;
+            double topMargin = 20.0;
+
+            Vector2 paperSize = new Vector2(210.0, 297.0);            
+            Vector2 origin = Vector2.Zero;
+            Vector2 windowUpRight = Vector2.Zero;
+            Vector2 windowBottomLeft = Vector2.Zero;
+
+            bool scaleToFit = true;
+            double scaleNumerator = 1.0;
+            double scaleDenominator = 1.0;
+            PlotFlags flags = PlotFlags.DrawViewportsFirst | PlotFlags.PrintLineweights | PlotFlags.PlotPlotStyles | PlotFlags.UseStandardScale;
+            PlotType plotType = PlotType.DrawingExtents;
+
+            PlotPaperUnits paperUnits = PlotPaperUnits.Milimeters;
+            PlotRotation paperRotation = PlotRotation.Degrees90;
+
+            ShadePlotMode shadePlotMode = ShadePlotMode.AsDisplayed;
+            ShadePlotResolutionMode shadePlotResolutionMode = ShadePlotResolutionMode.Normal;
+            short shadePlotDPI = 300;
+            Vector2 paperImageOrigin = Vector2.Zero;
 
             this.chunk.Next();
             while (this.chunk.Code != 100)
@@ -8793,39 +9407,39 @@ namespace netDxf.IO
                 switch (this.chunk.Code)
                 {
                     case 1:
-                        plot.PageSetupName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        pageName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 2:
-                        plot.PlotterName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        plotterName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 4:
-                        plot.PaperSizeName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        paperSizeName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 6:
-                        plot.ViewName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        viewName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 7:
-                        plot.CurrentStyleSheet = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
+                        styleSheet = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         this.chunk.Next();
                         break;
                     case 40:
-                        plot.LeftMargin = this.chunk.ReadDouble();
+                        leftMargin = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 41:
-                        plot.BottomMargin = this.chunk.ReadDouble();
+                        bottomMargin = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 42:
-                        plot.RightMargin = this.chunk.ReadDouble();
+                        rightMargin = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 43:
-                        plot.TopMargin = this.chunk.ReadDouble();
+                        topMargin = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 44:
@@ -8834,6 +9448,14 @@ namespace netDxf.IO
                         break;
                     case 45:
                         paperSize.Y = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 46:
+                        origin.X = this.chunk.ReadDouble();
+                        this.chunk.Next();
+                        break;
+                    case 47:
+                        origin.Y = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 48:
@@ -8853,23 +9475,44 @@ namespace netDxf.IO
                         this.chunk.Next();
                         break;
                     case 142:
-                        plot.PrintScaleNumerator = this.chunk.ReadDouble();
+                        scaleNumerator = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 143:
-                        plot.PrintScaleDenominator = this.chunk.ReadDouble();
+                        scaleDenominator = this.chunk.ReadDouble();
                         this.chunk.Next();
                         break;
                     case 70:
-                        plot.Flags = (PlotFlags) this.chunk.ReadShort();
+                        flags = (PlotFlags) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
                     case 72:
-                        plot.PaperUnits = (PlotPaperUnits) this.chunk.ReadShort();
+                        paperUnits = (PlotPaperUnits) this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
                     case 73:
-                        plot.PaperRotation = (PlotRotation) this.chunk.ReadShort();
+                        paperRotation = (PlotRotation) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 74:
+                        plotType = (PlotType) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 75:
+                        short plotScale = this.chunk.ReadShort();
+                        scaleToFit = plotScale == 0;
+                        this.chunk.Next();
+                        break;
+                    case 76:
+                        shadePlotMode = (ShadePlotMode) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 77:
+                        shadePlotResolutionMode = (ShadePlotResolutionMode) this.chunk.ReadShort();
+                        this.chunk.Next();
+                        break;
+                    case 78:
+                        shadePlotDPI = this.chunk.ReadShort();
                         this.chunk.Next();
                         break;
                     case 148:
@@ -8886,10 +9529,30 @@ namespace netDxf.IO
                 }
             }
 
-            plot.PaperSize = paperSize;
-            plot.WindowBottomLeft = windowBottomLeft;
-            plot.WindowUpRight = windowUpRight;
-            plot.PaperImageOrigin = paperImageOrigin;
+            PlotSettings plot = new PlotSettings
+            {
+                PageSetupName = pageName,
+                PlotterName = plotterName,
+                PaperSizeName = paperSizeName,
+                ViewName = viewName,
+                CurrentStyleSheet = styleSheet,
+                Origin = origin,
+                PaperMargin = new PaperMargin(leftMargin, bottomMargin, rightMargin, topMargin),
+                PaperSize = paperSize,
+                WindowUpRight = windowUpRight,
+                WindowBottomLeft = windowBottomLeft,
+                ScaleToFit = scaleToFit,
+                PrintScaleNumerator = scaleNumerator,
+                PrintScaleDenominator = scaleDenominator,
+                Flags = flags,
+                PlotType = plotType,
+                PaperUnits = paperUnits,
+                PaperRotation = paperRotation,
+                ShadePlotMode = shadePlotMode,
+                ShadePlotResolutionMode = shadePlotResolutionMode,
+                ShadePlotDPI = shadePlotDPI,
+                PaperImageOrigin = paperImageOrigin
+            };
 
             return plot;
         }
@@ -9048,7 +9711,7 @@ namespace netDxf.IO
             }
 
             // add the dxf entities to the document
-            foreach (KeyValuePair<EntityObject, string> pair in this.entityList)
+            foreach (KeyValuePair<DxfObject, string> pair in this.entityList)
             {
                 Layout layout;
                 Block block;
@@ -9077,8 +9740,7 @@ namespace netDxf.IO
                     }
                     else
                     {
-                        this.doc.ActiveLayout = layout.Name;
-                        this.doc.AddEntity(pair.Key, false, false);
+                        this.doc.Blocks[layout.AssociatedBlock.Name].Entities.Add(viewport);
                     }
                 }
                 else
@@ -9090,8 +9752,17 @@ namespace netDxf.IO
                         double scale = UnitHelper.ConversionFactor(this.doc.DrawingVariables.InsUnits, insert.Block.Record.Units);
                         insert.Scale *= scale;
                     }
-                    this.doc.ActiveLayout = layout.Name;
-                    this.doc.AddEntity(pair.Key, false, false);
+
+                    AttributeDefinition attDef = pair.Key as AttributeDefinition;
+                    if (attDef != null)
+                    {
+                        if(!layout.AssociatedBlock.AttributeDefinitions.ContainsTag(attDef.Tag))
+                            layout.AssociatedBlock.AttributeDefinitions.Add(attDef);
+                    }
+
+                    EntityObject entity = pair.Key as EntityObject;
+                    if (entity != null)
+                        layout.AssociatedBlock.Entities.Add(entity);
                 }
             }
 
@@ -9131,17 +9802,6 @@ namespace netDxf.IO
                 }
             }
 
-            // post process leader annotations
-            foreach (KeyValuePair<Leader, string> pair in this.leaderAnnotation)
-            {
-                EntityObject entity = this.doc.GetObjectByHandle(pair.Value) as EntityObject;
-                if (entity != null)
-                {
-                    pair.Key.Annotation = entity;
-                    pair.Key.Update(false);
-                }
-            }
-
             // post process group entities
             foreach (KeyValuePair<Group, List<string>> pair in this.groupEntities)
             {
@@ -9155,19 +9815,29 @@ namespace netDxf.IO
 
             // post process dimension style overrides,
             // it is stored in the dimension XData and the information stored there might contain handles to Linetypes, TextStyles and/or Blocks,
-            // therefore is better process it at the end, when everything has been created
-            // read dimension style overrides
+            // therefore is better process it at the end, when everything has been created read dimension style overrides
             foreach (Dimension dim in this.doc.Dimensions)
             {
                 XData xDataOverrides;
                 if (dim.XData.TryGetValue(ApplicationRegistry.DefaultName, out xDataOverrides))
-                    dim.StyleOverrides.AddRange(this.ReadDimensionStyleOverrideXData(xDataOverrides, dim));
+                    dim.StyleOverrides.AddRange(this.ReadDimensionStyleOverrideXData(xDataOverrides));
             }
             foreach (Leader leader in this.doc.Leaders)
             {
                 XData xDataOverrides;
                 if (leader.XData.TryGetValue(ApplicationRegistry.DefaultName, out xDataOverrides))
-                    leader.StyleOverrides.AddRange(this.ReadDimensionStyleOverrideXData(xDataOverrides, leader));
+                    leader.StyleOverrides.AddRange(this.ReadDimensionStyleOverrideXData(xDataOverrides));
+            }
+
+            // post process leader annotations
+            foreach (KeyValuePair<Leader, string> pair in this.leaderAnnotation)
+            {
+                EntityObject entity = this.doc.GetObjectByHandle(pair.Value) as EntityObject;
+                if (entity != null)
+                {
+                    pair.Key.Annotation = entity;
+                    pair.Key.Update(true);
+                }
             }
         }
 

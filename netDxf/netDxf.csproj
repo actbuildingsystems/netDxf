@@ -76,6 +76,7 @@
     <Reference Include="System.Drawing" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Blocks\BlockAttributeDefinitionChangeEventArgs.cs" />
     <Compile Include="Collections\DimensionStyleOverrideDictionaryEventArgs.cs" />
     <Compile Include="Collections\DimensionStyleOverrideDictionary.cs" />
     <Compile Include="Collections\ObservableCollection.cs">
@@ -90,6 +91,21 @@
     <Compile Include="Collections\SupportFolders.cs" />
     <Compile Include="Entities\MTextDrawingDirection.cs" />
     <Compile Include="Entities\Shape.cs" />
+    <Compile Include="IHasXData.cs" />
+    <Compile Include="IO\DxfVersionNotSupportedException.cs" />
+    <Compile Include="Objects\PaperMargin.cs" />
+    <Compile Include="Objects\PlotType.cs" />
+    <Compile Include="Objects\ShadePlotMode.cs" />
+    <Compile Include="Objects\ShadePlotResolutionMode.cs" />
+    <Compile Include="Tables\DimensionStyleAlternateUnits.cs" />
+    <Compile Include="Tables\DimensionStyleTextDirection.cs" />
+    <Compile Include="Tables\DimensionStyleTextVerticalPlacement.cs" />
+    <Compile Include="Tables\DimensionStyleTextHorizontalPlacement.cs" />
+    <Compile Include="Tables\DimensionStyleFitOptions.cs" />
+    <Compile Include="Tables\DimensionStyleFitTextMove.cs" />
+    <Compile Include="Tables\DimensionStyleTolerances.cs" />
+    <Compile Include="Tables\DimensionStyleTolerancesDisplayMethod.cs" />
+    <Compile Include="Tables\DimensionStyleTolerancesVerticalPlacement.cs" />
     <Compile Include="Tables\FontStyle.cs" />
     <Compile Include="Tables\LinetypeSegment.cs" />
     <Compile Include="Tables\DimensionStyleOverride.cs" />
@@ -117,7 +133,6 @@
     </Compile>
     <Compile Include="Entities\Leader.cs" />
     <Compile Include="Entities\LeaderPathType.cs" />
-    <Compile Include="Entities\LeaderTextVerticalPosition.cs" />
     <Compile Include="Entities\SplineCreationMethod.cs" />
     <Compile Include="Entities\SplineKnotParameterization.cs" />
     <Compile Include="Entities\Tolerance.cs" />

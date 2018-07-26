@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,8 @@
 #endregion
 
 using System;
+using netDxf.Blocks;
+using netDxf.Collections;
 using netDxf.Tables;
 
 namespace netDxf.Entities
@@ -33,14 +35,42 @@ namespace netDxf.Entities
     /// To have duplicate tags is not recommended in any way, since there will be now way to know which is the definition associated to the insert attribute.
     /// </remarks>
     public class AttributeDefinition :
-        EntityObject
+        DxfObject,
+        ICloneable,
+        IHasXData
     {
         #region delegates and events
 
+        public delegate void LayerChangedEventHandler(AttributeDefinition sender, TableObjectChangedEventArgs<Layer> e);
+        public event LayerChangedEventHandler LayerChanged;
+        protected virtual Layer OnLayerChangedEvent(Layer oldLayer, Layer newLayer)
+        {
+            LayerChangedEventHandler ae = this.LayerChanged;
+            if (ae != null)
+            {
+                TableObjectChangedEventArgs<Layer> eventArgs = new TableObjectChangedEventArgs<Layer>(oldLayer, newLayer);
+                ae(this, eventArgs);
+                return eventArgs.NewValue;
+            }
+            return newLayer;
+        }
+
+        public delegate void LinetypeChangedEventHandler(AttributeDefinition sender, TableObjectChangedEventArgs<Linetype> e);
+        public event LinetypeChangedEventHandler LinetypeChanged;
+        protected virtual Linetype OnLinetypeChangedEvent(Linetype oldLinetype, Linetype newLinetype)
+        {
+            LinetypeChangedEventHandler ae = this.LinetypeChanged;
+            if (ae != null)
+            {
+                TableObjectChangedEventArgs<Linetype> eventArgs = new TableObjectChangedEventArgs<Linetype>(oldLinetype, newLinetype);
+                ae(this, eventArgs);
+                return eventArgs.NewValue;
+            }
+            return newLinetype;
+        }
+
         public delegate void TextStyleChangedEventHandler(AttributeDefinition sender, TableObjectChangedEventArgs<TextStyle> e);
-
         public event TextStyleChangedEventHandler TextStyleChange;
-
         protected virtual TextStyle OnTextStyleChangedEvent(TextStyle oldTextStyle, TextStyle newTextStyle)
         {
             TextStyleChangedEventHandler ae = this.TextStyleChange;
@@ -53,13 +83,38 @@ namespace netDxf.Entities
             return newTextStyle;
         }
 
+        public event XDataAddAppRegEventHandler XDataAddAppReg;
+        protected virtual void OnXDataAddAppRegEvent(ApplicationRegistry item)
+        {
+            XDataAddAppRegEventHandler ae = this.XDataAddAppReg;
+            if (ae != null)
+                ae(this, new ObservableCollectionEventArgs<ApplicationRegistry>(item));
+        }
+
+        public event XDataRemoveAppRegEventHandler XDataRemoveAppReg;
+        protected virtual void OnXDataRemoveAppRegEvent(ApplicationRegistry item)
+        {
+            XDataRemoveAppRegEventHandler ae = this.XDataRemoveAppReg;
+            if (ae != null)
+                ae(this, new ObservableCollectionEventArgs<ApplicationRegistry>(item));
+        }
+
         #endregion
 
         #region private fields
 
+        private AciColor color;
+        private Layer layer;
+        private Linetype linetype;
+        private Lineweight lineweight;
+        private Transparency transparency;
+        private double linetypeScale;
+        private bool isVisible;
+        private Vector3 normal;
+
         private readonly string tag;
         private string prompt;
-        private object value;
+        private object attValue;
         private TextStyle style;
         private Vector3 position;
         private AttributeFlags flags;
@@ -68,6 +123,8 @@ namespace netDxf.Entities
         private double obliqueAngle;
         private double rotation;
         private TextAlignment alignment;
+
+        private readonly XDataDictionary xData;
 
         #endregion
 
@@ -88,24 +145,8 @@ namespace netDxf.Entities
         /// <param name="tag">Attribute identifier.</param>
         /// <param name="style">Attribute <see cref="TextStyle">text style</see>.</param>
         public AttributeDefinition(string tag, TextStyle style)
-            : base(EntityType.AttributeDefinition, DxfObjectCode.AttributeDefinition)
+            : this(tag, MathHelper.IsZero(style.Height) ? 1.0 : style.Height, style)
         {
-            if (string.IsNullOrEmpty(tag))
-                throw new ArgumentNullException(nameof(tag));
-
-            this.tag = tag;
-            this.flags = AttributeFlags.Visible;
-            this.prompt = string.Empty;
-            this.value = null;
-            this.position = Vector3.Zero;
-            if (style == null)
-                throw new ArgumentNullException(nameof(style));
-            this.style = style;
-            this.height = MathHelper.IsZero(style.Height) ? 1.0 : style.Height;
-            this.widthFactor = style.WidthFactor;
-            this.obliqueAngle = style.ObliqueAngle;
-            this.rotation = 0.0;
-            this.alignment = TextAlignment.BaselineLeft;
         }
 
         /// <summary>
@@ -115,7 +156,7 @@ namespace netDxf.Entities
         /// <param name="textHeight">Height of the attribute definition text.</param>
         /// <param name="style">Attribute <see cref="TextStyle">text style</see>.</param>
         public AttributeDefinition(string tag, double textHeight, TextStyle style)
-            : base(EntityType.AttributeDefinition, DxfObjectCode.AttributeDefinition)
+            : base(DxfObjectCode.AttributeDefinition)
         {
             if (string.IsNullOrEmpty(tag))
                 throw new ArgumentNullException(nameof(tag));
@@ -125,23 +166,139 @@ namespace netDxf.Entities
             this.tag = tag;
             this.flags = AttributeFlags.Visible;
             this.prompt = string.Empty;
-            this.value = null;
+            this.attValue = null;
             this.position = Vector3.Zero;
             if (style == null)
                 throw new ArgumentNullException(nameof(style));
             this.style = style;
             if (textHeight <= 0.0)
-                throw new ArgumentOutOfRangeException(nameof(textHeight), this.value, "The attribute definition text height must be greater than zero.");
+                throw new ArgumentOutOfRangeException(nameof(textHeight), this.attValue, "The attribute definition text height must be greater than zero.");
             this.height = textHeight;
             this.widthFactor = style.WidthFactor;
             this.obliqueAngle = style.ObliqueAngle;
             this.rotation = 0.0;
             this.alignment = TextAlignment.BaselineLeft;
+
+            this.color = AciColor.ByLayer;
+            this.layer = Layer.Default;
+            this.linetype = Linetype.ByLayer;
+            this.lineweight = Lineweight.ByLayer;
+            this.transparency = Transparency.ByLayer;
+            this.linetypeScale = 1.0;
+            this.isVisible = true;
+            this.normal = Vector3.UnitZ;
+
+            this.xData = new XDataDictionary();
+            this.xData.AddAppReg += this.XData_AddAppReg;
+            this.xData.RemoveAppReg += this.XData_RemoveAppReg;
+
         }
 
         #endregion
 
         #region public property
+
+        /// <summary>
+        /// Gets or sets the entity <see cref="AciColor">color</see>.
+        /// </summary>
+        public AciColor Color
+        {
+            get { return this.color; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException(nameof(value));
+                this.color = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the entity <see cref="Layer">layer</see>.
+        /// </summary>
+        public Layer Layer
+        {
+            get { return this.layer; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException(nameof(value));
+                this.layer = this.OnLayerChangedEvent(this.layer, value);
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the entity <see cref="Linetype">line type</see>.
+        /// </summary>
+        public Linetype Linetype
+        {
+            get { return this.linetype; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException(nameof(value));
+                this.linetype = this.OnLinetypeChangedEvent(this.linetype, value);
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the entity line weight, one unit is always 1/100 mm (default = ByLayer).
+        /// </summary>
+        public Lineweight Lineweight
+        {
+            get { return this.lineweight; }
+            set { this.lineweight = value; }
+        }
+
+        /// <summary>
+        /// Gets or sets layer transparency (default: ByLayer).
+        /// </summary>
+        public Transparency Transparency
+        {
+            get { return this.transparency; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException(nameof(value));
+                this.transparency = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the entity line type scale.
+        /// </summary>
+        public double LinetypeScale
+        {
+            get { return this.linetypeScale; }
+            set
+            {
+                if (value <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "The line type scale must be greater than zero.");
+                this.linetypeScale = value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or set the entity visibility.
+        /// </summary>
+        public bool IsVisible
+        {
+            get { return this.isVisible; }
+            set { this.isVisible = value; }
+        }
+
+        /// <summary>
+        /// Gets or sets the entity <see cref="Vector3">normal</see>.
+        /// </summary>
+        public Vector3 Normal
+        {
+            get { return this.normal; }
+            set
+            {
+                this.normal = Vector3.Normalize(value);
+                if (Vector3.IsNaN(this.normal))
+                    throw new ArgumentException("The normal can not be the zero vector.", nameof(value));
+            }
+        }
 
         /// <summary>
         /// Gets the attribute identifier.
@@ -209,8 +366,8 @@ namespace netDxf.Entities
         /// </summary>
         public object Value
         {
-            get { return this.value; }
-            set { this.value = value; }
+            get { return this.attValue; }
+            set { this.attValue = value; }
         }
 
         /// <summary>
@@ -266,6 +423,23 @@ namespace netDxf.Entities
             set { this.alignment = value; }
         }
 
+        /// <summary>
+        /// Gets the owner of the actual dxf object.
+        /// </summary>
+        public new Block Owner
+        {
+            get { return (Block)base.Owner; }
+            internal set { base.Owner = value; }
+        }
+
+        /// <summary>
+        /// Gets the entity <see cref="XDataDictionary">extended data</see>.
+        /// </summary>
+        public XDataDictionary XData
+        {
+            get { return this.xData; }
+        }
+
         #endregion
 
         #region overrides
@@ -274,11 +448,11 @@ namespace netDxf.Entities
         /// Creates a new AttributeDefinition that is a copy of the current instance.
         /// </summary>
         /// <returns>A new AttributeDefinition that is a copy of this instance.</returns>
-        public override object Clone()
+        public object Clone()
         {
             AttributeDefinition entity = new AttributeDefinition(this.tag)
             {
-                //EntityObject properties
+                //Attribute definition properties
                 Layer = (Layer) this.Layer.Clone(),
                 Linetype = (Linetype) this.Linetype.Clone(),
                 Color = (AciColor) this.Color.Clone(),
@@ -287,9 +461,8 @@ namespace netDxf.Entities
                 LinetypeScale = this.LinetypeScale,
                 Normal = this.Normal,
                 IsVisible = this.IsVisible,
-                //Attribute definition properties
                 Prompt = this.prompt,
-                Value = this.value,
+                Value = this.attValue,
                 Height = this.height,
                 WidthFactor = this.widthFactor,
                 ObliqueAngle = this.obliqueAngle,
@@ -307,5 +480,20 @@ namespace netDxf.Entities
         }
 
         #endregion
+
+        #region XData events
+
+        private void XData_AddAppReg(XDataDictionary sender, ObservableCollectionEventArgs<ApplicationRegistry> e)
+        {
+            this.OnXDataAddAppRegEvent(e.Item);
+        }
+
+        private void XData_RemoveAppReg(XDataDictionary sender, ObservableCollectionEventArgs<ApplicationRegistry> e)
+        {
+            this.OnXDataRemoveAppRegEvent(e.Item);
+        }
+
+        #endregion
+
     }
 }

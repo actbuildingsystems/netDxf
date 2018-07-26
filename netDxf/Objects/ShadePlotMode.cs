@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -20,36 +20,31 @@
 
 #endregion
 
-namespace netDxf.Entities
+namespace netDxf.Objects
 {
     /// <summary>
-    /// Defines the vertical position of a leader with a text annotation.
+    /// Defines the shade plot mode
     /// </summary>
-    public enum LeaderTextVerticalPosition
+    public enum ShadePlotMode
     {
         /// <summary>
-        /// The text annotation is placed in the leader hook with respect of its alignment point.
+        /// As displayed.
         /// </summary>
-        Centered = 0,
+        AsDisplayed = 0,
 
         /// <summary>
-        /// The text annotation is placed above the leader hook line.
+        /// Wireframe.
         /// </summary>
-        Above = 1,
+        Wireframe = 1,
 
         /// <summary>
-        /// This options seems to have no effect.
+        /// Hidden.
         /// </summary>
-        Outside = 2,
+        Hidden = 2,
 
         /// <summary>
-        /// This options seems to have no effect.
+        /// Rendered.
         /// </summary>
-        JIS = 3,
-
-        /// <summary>
-        /// This options seems to have no effect.
-        /// </summary>
-        Bellow = 4
+        Rendered = 3
     }
 }
