@@ -2,15 +2,15 @@
 
 //                        netDxf library
 // Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
-// 
+//
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 // FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -328,9 +328,9 @@ namespace netDxf.IO
                         {
                             this.WriteEntity(entity, layout);
                         }
-                    }                  
+                    }
                 }
-                else 
+                else
                 {
                     // ModelSpace
                     foreach (AttributeDefinition attDef in layout.AssociatedBlock.AttributeDefinitions.Values)
@@ -829,7 +829,7 @@ namespace netDxf.IO
 
             this.chunk.Write(9, "$DIMFXL");
             this.chunk.Write(40, style.ExtLineFixedLength);
-            
+
             this.chunk.Write(9, "$DIMGAP");
             this.chunk.Write(40, style.TextOffset);
 
@@ -1196,7 +1196,7 @@ namespace netDxf.IO
             this.chunk.Write(100, SubclassMarker.DimensionStyle);
 
             this.chunk.Write(2, this.EncodeNonAsciiCharacters(style.Name));
-           
+
             this.chunk.Write(3, this.EncodeNonAsciiCharacters(string.Format("{0}<>{1}", style.DimPrefix, style.DimSuffix)));
             this.chunk.Write(4, this.EncodeNonAsciiCharacters(string.Format("{0}[]{1}", style.AlternateUnits.Prefix, style.AlternateUnits.Suffix)));
             this.chunk.Write(40, style.DimScaleOverall);
@@ -1302,8 +1302,8 @@ namespace netDxf.IO
                 case LinearUnitType.Fractional:
                     this.chunk.Write(273, style.AlternateUnits.StackUnits ? (short) 5 : (short) 7);
                     break;
-            }       
-            this.chunk.Write(274, style.Tolerances.AlternatePrecision);              
+            }
+            this.chunk.Write(274, style.Tolerances.AlternatePrecision);
             this.chunk.Write(275, (short) style.DimAngularUnits);
             this.chunk.Write(276, (short) style.FractionType);
             this.chunk.Write(277, (short) style.DimLengthUnits);
@@ -1375,7 +1375,7 @@ namespace netDxf.IO
             this.chunk.Write(372, (short) style.ExtLineLineweight);
 
             this.WriteXData(style.XData);
-        }      
+        }
 
         /// <summary>
         /// Writes a new block record to the table section.
@@ -1771,7 +1771,7 @@ namespace netDxf.IO
                     {
                         this.WriteEntity(entity, layout);
                     }
-                }               
+                }
             }
 
             // EndBlock entity
@@ -2475,7 +2475,7 @@ namespace netDxf.IO
 
             foreach (SplineVertex point in spline.ControlPoints)
             {
-                this.chunk.Write(41, point.Weigth);
+                this.chunk.Write(41, point.Weight);
                 this.chunk.Write(10, point.Position.X);
                 this.chunk.Write(20, point.Position.Y);
                 this.chunk.Write(30, point.Position.Z);
@@ -2907,10 +2907,12 @@ namespace netDxf.IO
             this.chunk.Write(40, mText.Height);
             this.chunk.Write(41, mText.RectangleWidth);
             this.chunk.Write(44, mText.LineSpacingFactor);
-           
+
             // even if the AutoCAD dxf documentation says that the rotation is in radians, this is wrong this value must be saved in degrees
             //this.chunk.Write(50, mText.Rotation);
 
+            //the other option for the rotation is to store the horizontal vector of the text
+            //it will be used just in case other programs read the rotation as radians
             Vector2 direction = Vector2.Rotate(Vector2.UnitX, mText.Rotation * MathHelper.DegToRad);
             direction.Normalize();
             Vector3 ocsDirection = MathHelper.Transform(new Vector3(direction.X, direction.Y, 0.0), mText.Normal, CoordinateSystem.Object, CoordinateSystem.World);
@@ -3158,7 +3160,7 @@ namespace netDxf.IO
                 this.chunk.Write(52, pattern.Angle);
                 this.chunk.Write(41, pattern.Scale);
                 this.chunk.Write(77, (short) 0); // Hatch pattern double flag
-                this.chunk.Write(78, (short) pattern.LineDefinitions.Count); // Number of pattern definition lines  
+                this.chunk.Write(78, (short) pattern.LineDefinitions.Count); // Number of pattern definition lines
                 this.WriteHatchPatternDefinitonLines(pattern);
             }
 
@@ -3780,7 +3782,7 @@ namespace netDxf.IO
 
             // tolerances
             if (writeDIMTOL)
-            { 
+            {
                 switch (dimtol)
                 {
                     case DimensionStyleTolerancesDisplayMethod.None:
