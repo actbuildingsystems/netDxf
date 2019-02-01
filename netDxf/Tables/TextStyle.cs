@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -370,15 +370,18 @@ namespace netDxf.Tables
             if (File.Exists(ttfFont))
                 fontFile = Path.GetFullPath(ttfFont);
             else
-            {
                 fontFile = string.Format("{0}{1}{2}", Environment.GetFolderPath(Environment.SpecialFolder.Fonts), Path.DirectorySeparatorChar, Path.GetFileName(ttfFont));
-                // if the TTF does not even exist in the font system folder 
-                if (!File.Exists(fontFile)) return string.Empty;
-            }
 
-            PrivateFontCollection fontCollection = new PrivateFontCollection();
-            fontCollection.AddFontFile(fontFile);
-            return fontCollection.Families[0].Name;
+            try
+            {
+                PrivateFontCollection fontCollection = new PrivateFontCollection();
+                fontCollection.AddFontFile(fontFile);
+                return fontCollection.Families[0].Name;
+            }
+            catch (FileNotFoundException)
+            {
+                return string.Empty;
+            }
         }
 
         #endregion

@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 //
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -2068,7 +2068,9 @@ namespace netDxf.IO
                         }
                         if (!color.UseTrueColor)
                             color = AciColor.FromCadIndex(index);
-
+                        // layer color cannot be ByLayer or ByBlock
+                        if (color.IsByLayer || color.IsByBlock)
+                            color = AciColor.Default;
                         this.chunk.Next();
                         break;
                     case 420: // the layer uses true color
@@ -2078,6 +2080,9 @@ namespace netDxf.IO
                     case 6:
                         string linetypeName = this.DecodeEncodedNonAsciiCharacters(this.chunk.ReadString());
                         linetype = this.GetLinetype(linetypeName);
+                        // layer linetype cannot be ByLayer or ByBlock
+                        if (linetype.IsByLayer || linetype.IsByBlock)
+                            linetype = Linetype.Continuous;
                         this.chunk.Next();
                         break;
                     case 290:
@@ -2086,6 +2091,9 @@ namespace netDxf.IO
                         break;
                     case 370:
                         lineweight = (Lineweight) this.chunk.ReadShort();
+                        // layer lineweight cannot be ByLayer or ByBlock
+                        if (lineweight == Lineweight.ByLayer || lineweight == Lineweight.ByBlock)
+                            lineweight = Lineweight.Default;
                         this.chunk.Next();
                         break;
                     case 1001:
