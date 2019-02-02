@@ -361,7 +361,7 @@ namespace netDxf.IO
 
             foreach (Layout layout in this.doc.Layouts)
             {
-                this.WriteLayout(layout, layoutDictionary.Handle);
+                this.WriteLayout(layout, layoutDictionary.Handle,doc.DrawingVariables.PsLtScale);
             }
 
             foreach (MLineStyle style in this.doc.MlineStyles.Items)
@@ -4727,7 +4727,7 @@ namespace netDxf.IO
             this.WriteXData(group.XData);
         }
 
-        private void WriteLayout(Layout layout, string ownerHandle)
+        private void WriteLayout(Layout layout, string ownerHandle, short ptltscale)
         {
             this.chunk.Write(0, layout.CodeName);
             this.chunk.Write(5, layout.Handle);
@@ -4737,7 +4737,7 @@ namespace netDxf.IO
 
             this.chunk.Write(100, SubclassMarker.Layout);
             this.chunk.Write(1, this.EncodeNonAsciiCharacters(layout.Name));
-            this.chunk.Write(70, (short) 1);
+            this.chunk.Write(70, (short)ptltscale);
             this.chunk.Write(71, layout.TabOrder);
 
             this.chunk.Write(10, layout.MinLimit.X);
