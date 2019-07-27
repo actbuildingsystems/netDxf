@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -20,50 +20,43 @@
 
 #endregion
 
-namespace netDxf.Tables
+using System;
+
+namespace netDxf.Entities
 {
     /// <summary>
-    /// Represents a simple linetype segment.
+    /// Represents the arguments thrown when the reference of an entity is added ore removed from another entity.
     /// </summary>
-    public class LinetypeSimpleSegment :
-        LinetypeSegment
+    public class EntityChangeEventArgs :
+        EventArgs
     {
         #region private fields
 
+        private readonly EntityObject item;
+
         #endregion
 
-        #region constructors
+        #region constructor
 
         /// <summary>
-        /// Initializes a new instance of the <c>LinetypeSimpleSegment</c> class.
+        /// Initializes a new instance of <c>EntityChangeEventArgs</c>.
         /// </summary>
-        public LinetypeSimpleSegment() : this(0.0)
+        /// <param name="item">The entity that is being added or removed from another entity.</param>
+        public EntityChangeEventArgs(EntityObject item)
         {
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <c>LinetypeSimpleSegment</c> class.
-        /// </summary>
-        /// <param name="length">Dash or space length of the segment.</param>
-        public LinetypeSimpleSegment(double length) : base (LinetypeSegmentType.Simple, length)
-        {
+            this.item = item;
         }
 
         #endregion
 
         #region public properties
 
-        #endregion
-
-        #region overrides
-
         /// <summary>
-        /// Creates a new <c>LinetypeSìmpleSegment</c> that is a copy of the current instance.
+        /// Gets the entity that is being added or removed.
         /// </summary>
-        /// <returns>A new <c>LinetypeSìmpleSegment</c> that is a copy of this instance.</returns>
-        public override object Clone()
+        public EntityObject Item
         {
-            return new LinetypeSimpleSegment(this.Length);
+            get { return this.item; }
         }
 
         #endregion

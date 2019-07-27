@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -100,7 +100,7 @@ namespace netDxf.Entities
             if (referenceLine == null)
                 throw new ArgumentNullException(nameof(referenceLine));
 
-            IList<Vector3> ocsPoints = MathHelper.Transform(
+            List<Vector3> ocsPoints = MathHelper.Transform(
                 new List<Vector3> { referenceLine.StartPoint, referenceLine.EndPoint }, normal, CoordinateSystem.World, CoordinateSystem.Object);
             this.firstRefPoint = new Vector2(ocsPoints[0].X, ocsPoints[0].Y);
             this.secondRefPoint = new Vector2(ocsPoints[1].X, ocsPoints[1].Y);
@@ -217,17 +217,16 @@ namespace netDxf.Entities
         /// <param name="point">Point along the dimension line.</param>
         public void SetDimensionLinePosition(Vector2 point)
         {
-            Vector2 refDir = Vector2.Normalize(this.secondRefPoint - this.firstRefPoint);
+            Vector2 refDir = this.secondRefPoint - this.firstRefPoint;
             Vector2 offsetDir = point - this.firstRefPoint;
 
             double cross = Vector2.CrossProduct(refDir, offsetDir);
             if (cross < 0)
             {
-                Vector2 tmp = this.firstRefPoint;
-                this.firstRefPoint = this.secondRefPoint;
-                this.secondRefPoint = tmp;
+                MathHelper.Swap(ref this.firstRefPoint, ref this.secondRefPoint);
                 refDir *= -1;
             }
+            refDir.Normalize();
 
             Vector2 vec = Vector2.Perpendicular(refDir);
             this.offset = MathHelper.PointLineDistance(point, this.firstRefPoint, refDir);
@@ -255,6 +254,54 @@ namespace netDxf.Entities
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal).Transpose();
+
+            Vector3 v;
+                
+            v = transOW * new Vector3(this.FirstReferencePoint.X, this.FirstReferencePoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            Vector2 newStart = new Vector2(v.X, v.Y);
+            double newElevation = v.Z;
+
+            v = transOW * new Vector3(this.SecondReferencePoint.X, this.SecondReferencePoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            Vector2 newEnd = new Vector2(v.X, v.Y);
+
+            if (this.TextPositionManuallySet)
+            {
+                v = transOW * new Vector3(this.textRefPoint.X, this.textRefPoint.Y, this.Elevation);
+                v = transformation * v + translation;
+                v = transWO * v;
+                this.textRefPoint = new Vector2(v.X, v.Y);
+            }
+
+            v = transOW * new Vector3(this.defPoint.X, this.defPoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            this.defPoint = new Vector2(v.X, v.Y);
+
+            this.FirstReferencePoint = newStart;
+            this.SecondReferencePoint = newEnd;
+            this.Elevation = newElevation;
+            this.Normal = newNormal;
+
+            this.SetDimensionLinePosition(this.defPoint);
+        }
 
         /// <summary>
         /// Calculate the dimension reference points.
@@ -350,9 +397,8 @@ namespace netDxf.Entities
 
             foreach (DimensionStyleOverride styleOverride in this.StyleOverrides.Values)
             {
-                object copy;
                 ICloneable value = styleOverride.Value as ICloneable;
-                copy = value != null ? value.Clone() : styleOverride.Value;
+                object copy = value != null ? value.Clone() : styleOverride.Value;
 
                 entity.StyleOverrides.Add(new DimensionStyleOverride(styleOverride.Type, copy));
             }

@@ -89,6 +89,7 @@
     <Compile Include="Collections\ObservableDictionaryEventArgs.cs" />
     <Compile Include="Collections\ShapeStyles.cs" />
     <Compile Include="Collections\SupportFolders.cs" />
+    <Compile Include="Entities\EntityChangeEventArgs.cs" />
     <Compile Include="Entities\MTextDrawingDirection.cs" />
     <Compile Include="Entities\MTextParagraphAlignment.cs" />
     <Compile Include="Entities\MTextParagraphOptions.cs" />
@@ -96,6 +97,8 @@
     <Compile Include="Entities\Shape.cs" />
     <Compile Include="IHasXData.cs" />
     <Compile Include="IO\DxfVersionNotSupportedException.cs" />
+    <Compile Include="Matrix2.cs" />
+    <Compile Include="Matrix4.cs" />
     <Compile Include="Objects\PaperMargin.cs" />
     <Compile Include="Objects\PlotType.cs" />
     <Compile Include="Objects\ShadePlotMode.cs" />
@@ -282,6 +285,7 @@
     <Compile Include="Units\UnitHelper.cs" />
     <Compile Include="Units\UnitStyleFormat.cs" />
     <Compile Include="Vector2.cs" />
+    <Compile Include="Vector4.cs" />
     <Compile Include="Vector3.cs" />
     <Compile Include="Matrix3.cs" />
     <Compile Include="DxfObjectCode.cs" />

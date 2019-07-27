@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -94,15 +94,35 @@ namespace netDxf.Entities
             get { return this.direction; }
             set
             {
-                this.direction = Vector3.Normalize(value);
-                if (Vector3.IsNaN(this.direction))
+                if(Vector3.Equals(Vector3.Zero, value))
                     throw new ArgumentException("The direction can not be the zero vector.", nameof(value));
+
+                this.direction = Vector3.Normalize(value);
             }
         }
 
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            this.Origin = transformation * this.Origin + translation;
+
+            Vector3 newDirection = transformation * this.Direction;
+            if (Vector3.Equals(Vector3.Zero, newDirection)) newDirection = this.Direction;
+            this.Direction = newDirection;
+
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+            this.Normal = newNormal;
+        }
 
         /// <summary>
         /// Creates a new XLine that is a copy of the current instance.

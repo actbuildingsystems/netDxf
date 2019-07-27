@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -52,6 +52,28 @@ namespace netDxf.Entities
             return newStyle;
         }
 
+        public delegate void AnnotationAddedEventHandler(Leader sender, EntityChangeEventArgs e);
+
+        public event AnnotationAddedEventHandler AnnotationAdded;
+
+        protected virtual void OnAnnotationAddedEvent(EntityObject item)
+        {
+            AnnotationAddedEventHandler ae = this.AnnotationAdded;
+            if (ae != null)
+                ae(this, new EntityChangeEventArgs(item));
+        }
+
+        public delegate void AnnotationRemovedEventHandler(Leader sender, EntityChangeEventArgs e);
+
+        public event AnnotationRemovedEventHandler AnnotationRemoved;
+
+        protected virtual void OnAnnotationRemovedEvent(EntityObject item)
+        {
+            AnnotationRemovedEventHandler ae = this.AnnotationRemoved;
+            if (ae != null)
+                ae(this, new EntityChangeEventArgs(item));
+        }
+        
         #endregion
 
         #region delegates and events for style overrides
@@ -322,18 +344,32 @@ namespace netDxf.Entities
                           value.Type == EntityType.Insert ||
                           value.Type == EntityType.Tolerance))
                         throw new ArgumentException("Only MText, Text, Insert, and Tolerance entities are supported as a leader annotation.", nameof(value));
+
+                    if (value.Type == EntityType.Text || value.Type == EntityType.MText)
+                        this.HasHookline = true;
                 }
 
+                // nothing else to do if it is the same
                 if (ReferenceEquals(this.annotation, value))
                     return;
 
-                if (this.annotation != null)
-                    this.annotation.RemoveReactor(this);
 
+                // remove the previous clipping boundary
+                if (this.annotation != null)
+                {
+                    this.annotation.RemoveReactor(this);
+                    this.OnAnnotationRemovedEvent(this.annotation);
+                }
+
+                // add the new clipping boundary
                 if (value != null)
+                {
                     value.AddReactor(this);
+                    this.OnAnnotationAddedEvent(value);
+                }
 
                 this.annotation = value;
+                this.Update(true);
             }
         }
 
@@ -393,11 +429,7 @@ namespace netDxf.Entities
         public new Vector3 Normal
         {
             get { return base.Normal; }
-            set
-            {
-                this.ChangeAnnotationCoordinateSystem(value, this.elevation);
-                base.Normal = value;
-            }
+            set { base.Normal = value; }
         }
 
         /// <summary>
@@ -407,11 +439,7 @@ namespace netDxf.Entities
         public double Elevation
         {
             get { return this.elevation; }
-            set
-            {
-                this.ChangeAnnotationCoordinateSystem(this.Normal, value);
-                this.elevation = value;
-            }
+            set { this.elevation = value; }
         }
 
         /// <summary>
@@ -599,9 +627,9 @@ namespace netDxf.Entities
             {
                 case EntityType.MText:
                     MText mText = (MText) this.annotation;
-                    Vector2 dir = this.vertexes[this.vertexes.Count - 1] - this.vertexes[this.vertexes.Count - 2];
+                    Vector2 mTextdir = this.vertexes[this.vertexes.Count - 1] - this.vertexes[this.vertexes.Count - 2];
                     double mTextXoffset = 0.0;
-                    int mTextSide = Math.Sign(dir.X);
+                    int mTextSide = Math.Sign(mTextdir.X);
                     if (textVerticalPlacement == DimensionStyleTextVerticalPlacement.Centered)
                     {
                         if (mTextSide >= 0)
@@ -626,20 +654,6 @@ namespace netDxf.Entities
                     mText.Position = MathHelper.Transform(new Vector3(position.X - mTextXoffset, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
                     mText.Height = textHeight * dimScale;
                     mText.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
-                    break;
-
-                case EntityType.Insert:
-                    Insert ins = (Insert) this.annotation;
-                    position = hook + this.offset;
-                    ins.Position = MathHelper.Transform(new Vector3(position.X, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
-                    ins.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
-                    break;
-
-                case EntityType.Tolerance:
-                    Tolerance tol = (Tolerance) this.annotation;
-                    position = hook + this.offset;
-                    tol.Position = MathHelper.Transform(new Vector3(position.X, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
-                    tol.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
                     break;
 
                 case EntityType.Text:
@@ -672,6 +686,20 @@ namespace netDxf.Entities
                     text.Position = MathHelper.Transform(new Vector3(position.X - textXoffset, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
                     text.Height = textHeight * dimScale;
                     text.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
+                    break;
+
+                case EntityType.Insert:
+                    Insert ins = (Insert) this.annotation;
+                    position = hook + this.offset;
+                    ins.Position = MathHelper.Transform(new Vector3(position.X, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
+                    ins.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
+                    break;
+
+                case EntityType.Tolerance:
+                    Tolerance tol = (Tolerance) this.annotation;
+                    position = hook + this.offset;
+                    tol.Position = MathHelper.Transform(new Vector3(position.X, position.Y, this.elevation), this.Normal, CoordinateSystem.Object, CoordinateSystem.World);
+                    tol.Color = textColor.IsByBlock ? AciColor.ByLayer : textColor;
                     break;
 
                 default:
@@ -774,47 +802,39 @@ namespace netDxf.Entities
             return  this.Hook - dir * arrowSize * dimScale;
         }
 
-        private void ChangeAnnotationCoordinateSystem(Vector3 newNormal, double newElevation)
-        {
-            if (this.annotation == null)
-                return;
-
-            Vector3 position;
-            Vector3 ocsPosition;
-            Vector3 wcsPosition;
-            this.annotation.Normal = newNormal;
-            switch (this.annotation.Type)
-            {
-                case EntityType.MText:
-                    position = ((MText)this.annotation).Position;
-                    ocsPosition = MathHelper.Transform(position, this.Normal, CoordinateSystem.World, CoordinateSystem.Object);
-                    wcsPosition = MathHelper.Transform(new Vector3(ocsPosition.X, ocsPosition.Y, newElevation), newNormal, CoordinateSystem.Object, CoordinateSystem.World);
-                    ((MText)this.annotation).Position = wcsPosition;
-                    break;
-                case EntityType.Insert:
-                    position = ((Insert)this.annotation).Position;
-                    ocsPosition = MathHelper.Transform(position, this.Normal, CoordinateSystem.World, CoordinateSystem.Object);
-                    wcsPosition = MathHelper.Transform(new Vector3(ocsPosition.X, ocsPosition.Y, newElevation), newNormal, CoordinateSystem.Object, CoordinateSystem.World);
-                    ((Insert)this.annotation).Position = wcsPosition;
-                    break;
-                case EntityType.Tolerance:
-                    position = ((Tolerance)this.annotation).Position;
-                    ocsPosition = MathHelper.Transform(position, this.Normal, CoordinateSystem.World, CoordinateSystem.Object);
-                    wcsPosition = MathHelper.Transform(new Vector3(ocsPosition.X, ocsPosition.Y, newElevation), newNormal, CoordinateSystem.Object, CoordinateSystem.World);
-                    ((Tolerance)this.annotation).Position = wcsPosition;
-                    break;
-                case EntityType.Text:
-                    position = ((Text)this.annotation).Position;
-                    ocsPosition = MathHelper.Transform(position, this.Normal, CoordinateSystem.World, CoordinateSystem.Object);
-                    wcsPosition = MathHelper.Transform(new Vector3(ocsPosition.X, ocsPosition.Y, newElevation), newNormal, CoordinateSystem.Object, CoordinateSystem.World);
-                    ((Text)this.annotation).Position = wcsPosition;
-                    break;
-            }
-        }
-
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+            double newElevation = this.Elevation;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal).Transpose();
+
+            for (int i = 0; i < this.Vertexes.Count; i++)
+            {
+                Vector3 v = transOW * new Vector3(this.Vertexes[i].X, this.Vertexes[i].Y, this.Elevation);
+                v = transformation * v + translation;
+                v = transWO * v;
+                this.Vertexes[i] = new Vector2(v.X, v.Y);
+                newElevation = v.Z;
+            }
+
+            this.Elevation = newElevation;
+            this.Normal = newNormal;
+
+            this.annotation?.TransformBy(transformation, translation);
+        }
 
         /// <summary>
         /// Creates a new Leader that is a copy of the current instance.
@@ -841,14 +861,13 @@ namespace netDxf.Entities
                 Offset = this.offset,
                 LineColor = this.lineColor,
                 Annotation = (EntityObject) this.annotation?.Clone(),
-                hasHookline = this.hasHookline // do not call directly the property, the vertexes list already includes it if it has a hook line
+                HasHookline = this.hasHookline
             };
 
             foreach (DimensionStyleOverride styleOverride in this.StyleOverrides.Values)
             {
-                object copy;
                 ICloneable value = styleOverride.Value as ICloneable;
-                copy = value != null ? value.Clone() : styleOverride.Value;
+                object copy = value != null ? value.Clone() : styleOverride.Value;
 
                 entity.StyleOverrides.Add(new DimensionStyleOverride(styleOverride.Type, copy));
             }

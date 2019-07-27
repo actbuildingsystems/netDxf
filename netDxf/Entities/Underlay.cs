@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using netDxf.Objects;
 using netDxf.Tables;
 
@@ -36,7 +37,7 @@ namespace netDxf.Entities
 
         private UnderlayDefinition definition;
         private Vector3 position;
-        private Vector3 scale;
+        private Vector2 scale;
         private double rotation;
         private short contrast;
         private short fade;
@@ -55,15 +56,38 @@ namespace netDxf.Entities
         /// <summary>
         /// Initializes a new instance of the <c>Underlay</c> class.
         /// </summary>
-        /// <param name="definition">Underlay definition.</param>
+        /// <param name="definition"><see cref="UnderlayDefinition">Underlay definition</see>.</param>
         public Underlay(UnderlayDefinition definition)
+            : this(definition, Vector3.Zero, 1.0)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>Underlay</c> class.
+        /// </summary>
+        /// <param name="definition"><see cref="UnderlayDefinition">Underlay definition</see>.</param>
+        /// <param name="position">Underlay <see cref="Vector3">position</see> in world coordinates.</param>
+        public Underlay(UnderlayDefinition definition, Vector3 position)
+            : this(definition, position, 1.0)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>Underlay</c> class.
+        /// </summary>
+        /// <param name="definition"><see cref="UnderlayDefinition">Underlay definition</see>.</param>
+        /// <param name="position">Underlay <see cref="Vector3">position</see> in world coordinates.</param>
+        /// <param name="scale">Underlay scale.</param>
+        public Underlay(UnderlayDefinition definition, Vector3 position, double scale)
             : base(EntityType.Underlay, DxfObjectCode.Underlay)
         {
             if (definition == null)
                 throw new ArgumentNullException(nameof(definition));
             this.definition = definition;
-            this.position = Vector3.Zero;
-            this.scale = new Vector3(1.0);
+            this.position = position;
+            if (scale <= 0)
+                throw new ArgumentOutOfRangeException(nameof(scale), scale, "The Underlay scale must be greater than zero.");
+            this.scale = new Vector2(scale);
             this.rotation = 0.0;
             this.contrast = 100;
             this.fade = 0;
@@ -82,7 +106,6 @@ namespace netDxf.Entities
                     break;
             }
         }
-
         #endregion
 
         #region public properties
@@ -123,10 +146,21 @@ namespace netDxf.Entities
         /// <summary>
         /// Gets or sets the underlay scale.
         /// </summary>
-        public Vector3 Scale
+        /// <remarks>
+        /// Any of the vector scale components cannot be zero.<br />
+        /// Even thought the DXF has a code for the Z scale it seems that it has no use.
+        /// The X and Y components multiplied by the original size of the pdf page represent the width and height of the final underlay.
+        /// The Z component even thought it is present in the DXF it seems it has no use.
+        /// </remarks>
+        public Vector2 Scale
         {
             get { return this.scale; }
-            set { this.scale = value; }
+            set
+            {
+                if (MathHelper.IsZero(value.X) || MathHelper.IsZero(value.Y))
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "Any of the vector scale components cannot be zero.");
+                this.scale = value;
+            }
         }
 
         /// <summary>
@@ -192,6 +226,63 @@ namespace netDxf.Entities
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>
+        /// Non-uniform scaling for rotated underlays is not supported.
+        /// This is not a limitation of the code but the DXF format, unlike the Image there is no way to define the local UV vectors.<br />
+        /// Matrix3 adopts the convention of using column vectors to represent a transformation matrix.
+        /// </remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newPosition = transformation * this.Position + translation;
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal);
+            transWO = transWO.Transpose();
+
+            List<Vector2> uv = MathHelper.Transform(
+                new[]
+                {
+                    this.Scale.X * Vector2.UnitX,
+                    this.Scale.Y * Vector2.UnitY
+                },
+                this.rotation * MathHelper.DegToRad,
+                CoordinateSystem.Object, CoordinateSystem.World);
+
+            Vector3 v;
+            v = transOW * new Vector3(uv[0].X , uv[0].Y, 0.0);
+            v = transformation * v;
+            v = transWO * v;
+            Vector2 newUvector = new Vector2(v.X, v.Y);
+
+            v = transOW * new Vector3(uv[1].X, uv[1].Y, 0.0);
+            v = transformation * v;
+            v = transWO * v;
+            Vector2 newVvector = new Vector2(v.X, v.Y);
+
+            int sign = Math.Sign(transformation.M11 * transformation.M22 * transformation.M33) < 0 ? -1 : 1;
+
+            double scaleX = sign * newUvector.Modulus();
+            scaleX = MathHelper.IsZero(scaleX) ? MathHelper.Epsilon : scaleX;
+            double scaleY = newVvector.Modulus();
+            scaleY = MathHelper.IsZero(scaleY) ? MathHelper.Epsilon : scaleY;
+
+            Vector2 newScale = new Vector2(scaleX, scaleY);
+            double newRotation = Vector2.Angle(sign * newUvector) * MathHelper.RadToDeg;
+
+            this.Position = newPosition;
+            this.Normal = newNormal;
+            this.Rotation = newRotation;
+            this.Scale = newScale;           
+        }
 
         /// <summary>
         /// Creates a new Underlay that is a copy of the current instance.

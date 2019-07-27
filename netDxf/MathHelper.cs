@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -81,15 +81,58 @@ namespace netDxf
         /// <summary>
         /// Represents the smallest number used for comparison purposes.
         /// </summary>
+        /// <remarks>
+        /// The epsilon value must be a positive number greater than zero.
+        /// </remarks>
         public static double Epsilon
         {
             get { return epsilon; }
-            set { epsilon = value; }
+            set
+            {
+                if(value<=0.0)
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "The epsilon value must be a positive number greater than zero.");
+                epsilon = value;
+            }
         }
 
         #endregion
 
         #region static methods
+
+        /// <summary>
+        /// Returns a value indicating the sign of a double-precision floating-point number.
+        /// </summary>
+        /// <param name="number">Double precision number.
+        /// </param>
+        /// <returns>
+        /// A number that indicates the sign of value.
+        /// Return value Meaning -1 value is less than zero.
+        /// 0 value is equal to zero.
+        /// 1 value is greater than zero.
+        /// </returns>
+        /// <remarks>This method will test for values of numbers very close to zero.</remarks>
+        public static int Sign(double number)
+        {
+            return IsZero(number) ? 0 : Math.Sign(number);
+        }
+
+        /// <summary>
+        /// Returns a value indicating the sign of a double-precision floating-point number.
+        /// </summary>
+        /// <param name="number">Double precision number.
+        /// <param name="threshold">Tolerance.</param>
+        /// </param>
+        /// <returns>
+        /// A number that indicates the sign of value.
+        /// Return value Meaning -1 value is less than zero.
+        /// 0 value is equal to zero.
+        /// 1 value is greater than zero.
+        /// </returns>
+        /// <remarks>This method will test for values of numbers very close to zero.</remarks>
+        public static int Sign(double number, double threshold)
+        {
+            return IsZero(number, threshold) ? 0 : Math.Sign(number);
+        }
 
         /// <summary>
         /// Checks if a number is close to one.
@@ -191,7 +234,7 @@ namespace netDxf
         /// <param name="from">Point coordinate system.</param>
         /// <param name="to">Coordinate system of the transformed point.</param>
         /// <returns>Transformed point list.</returns>
-        public static IList<Vector2> Transform(IEnumerable<Vector2> points, double rotation, CoordinateSystem from, CoordinateSystem to)
+        public static List<Vector2> Transform(IEnumerable<Vector2> points, double rotation, CoordinateSystem from, CoordinateSystem to)
         {
             if (points == null)
                 throw new ArgumentNullException(nameof(points));
@@ -202,19 +245,24 @@ namespace netDxf
 
             double sin = Math.Sin(rotation);
             double cos = Math.Cos(rotation);
+
             List<Vector2> transPoints;
             if (from == CoordinateSystem.World && to == CoordinateSystem.Object)
             {
                 transPoints = new List<Vector2>();
                 foreach (Vector2 p in points)
+                {
                     transPoints.Add(new Vector2(p.X*cos + p.Y*sin, -p.X*sin + p.Y*cos));
+                }
                 return transPoints;
             }
             if (from == CoordinateSystem.Object && to == CoordinateSystem.World)
             {
                 transPoints = new List<Vector2>();
                 foreach (Vector2 p in points)
+                {
                     transPoints.Add(new Vector2(p.X*cos - p.Y*sin, p.X*sin + p.Y*cos));
+                }
                 return transPoints;
             }
             return new List<Vector2>(points);
@@ -255,7 +303,7 @@ namespace netDxf
         /// <param name="from">Points coordinate system.</param>
         /// <param name="to">Coordinate system of the transformed points.</param>
         /// <returns>Transformed point list.</returns>
-        public static IList<Vector3> Transform(IEnumerable<Vector3> points, Vector3 zAxis, CoordinateSystem from, CoordinateSystem to)
+        public static List<Vector3> Transform(IEnumerable<Vector3> points, Vector3 zAxis, CoordinateSystem from, CoordinateSystem to)
         {
             if (points == null)
                 throw new ArgumentNullException(nameof(points));
@@ -295,14 +343,21 @@ namespace netDxf
         public static Matrix3 ArbitraryAxis(Vector3 zAxis)
         {
             zAxis.Normalize();
+
+            if (zAxis.Equals(Vector3.UnitZ)) return Matrix3.Identity;
+
             Vector3 wY = Vector3.UnitY;
             Vector3 wZ = Vector3.UnitZ;
             Vector3 aX;
 
-            if ((Math.Abs(zAxis.X) < 1/64.0) && (Math.Abs(zAxis.Y) < 1/64.0))
+            if ((Math.Abs(zAxis.X) < 1 / 64.0) && (Math.Abs(zAxis.Y) < 1 / 64.0))
+            {
                 aX = Vector3.CrossProduct(wY, zAxis);
+            }
             else
+            {
                 aX = Vector3.CrossProduct(wZ, zAxis);
+            }
 
             aX.Normalize();
 
@@ -399,7 +454,7 @@ namespace netDxf
         /// <param name="dir0">First line direction.</param>
         /// <param name="point1">Second line origin point.</param>
         /// <param name="dir1">Second line direction.</param>
-        /// <returns>The intersection point between the two line.</returns>
+        /// <returns>The intersection point between the two lines.</returns>
         /// <remarks>If the lines are parallel the method will return a <see cref="Vector2.NaN">Vector2.NaN</see>.</remarks>
         public static Vector2 FindIntersection(Vector2 point0, Vector2 dir0, Vector2 point1, Vector2 dir1)
         {
@@ -414,7 +469,7 @@ namespace netDxf
         /// <param name="point1">Second line origin point.</param>
         /// <param name="dir1">Second line direction.</param>
         /// <param name="threshold">Tolerance.</param>
-        /// <returns>The intersection point between the two line.</returns>
+        /// <returns>The intersection point between the two lines.</returns>
         /// <remarks>If the lines are parallel the method will return a <see cref="Vector2.NaN">Vector2.NaN</see>.</remarks>
         public static Vector2 FindIntersection(Vector2 point0, Vector2 dir0, Vector2 point1, Vector2 dir1, double threshold)
         {
@@ -438,6 +493,7 @@ namespace netDxf
         public static double NormalizeAngle(double angle)
         {
             double c = angle%360.0;
+            if (IsZero(c)) c = 0.0;
             if (c < 0)
                 return 360.0 + c;
             return c;
@@ -482,6 +538,19 @@ namespace netDxf
             q.Z += (cos + (1 - cos)*axis.Z*axis.Z)*v.Z;
 
             return q;
+        }
+
+        /// <summary>
+        /// Swaps two variables.
+        /// </summary>
+        /// <typeparam name="T">Variable type.</typeparam>
+        /// <param name="obj1">An object of type T.</param>
+        /// <param name="obj2">An object of type T.</param>
+        public static void Swap<T>(ref T obj1, ref T obj2)
+        {
+            T tmp = obj1;
+            obj1 = obj2;
+            obj2 = tmp;
         }
 
         #endregion

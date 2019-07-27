@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -57,11 +57,12 @@ namespace netDxf.Entities
 
         private ToleranceEntry entry1;
         private ToleranceEntry entry2;
-        private string height;
+        private string projectedToleranceZoneValue;
         private bool showProjectedToleranceZoneSymbol;
         private string datumIdentifier;
 
         private DimensionStyle style;
+        private double textHeight;
         private Vector3 position;
         private double rotation;
 
@@ -106,11 +107,12 @@ namespace netDxf.Entities
         {
             this.entry1 = tolerance;
             this.entry2 = null;
-            this.height = string.Empty;
+            this.projectedToleranceZoneValue = string.Empty;
             this.showProjectedToleranceZoneSymbol = false;
             this.datumIdentifier = string.Empty;
 
             this.style = DimensionStyle.Default;
+            this.textHeight = this.style.TextHeight;
             this.position = position;
             this.rotation = 0.0;
         }
@@ -138,16 +140,34 @@ namespace netDxf.Entities
         }
 
         /// <summary>
+        /// Gets or sets the text height.
+        /// </summary>
+        /// <remarks>
+        /// Valid values must be greater than zero.
+        /// By default it initially uses the text height defined in the style, when saved in the DXF this value is stored as extended data information.
+        /// </remarks>
+        public double TextHeight
+        {
+            get { return this.textHeight; }
+            set
+            {
+                if (value <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "The tolerance text height must be greater than zero.");
+                this.textHeight = value;
+            }
+        }
+
+        /// <summary>
         /// Gets or sets the projected tolerance zone value.
         /// </summary>
         /// <remarks>
         /// A projected tolerance zone controls the variation in height of the extended portion of a fixed perpendicular part
         /// and refines the tolerance to that specified by positional tolerances.
         /// </remarks>
-        public string Height
+        public string ProjectedToleranceZoneValue
         {
-            get { return this.height; }
-            set { this.height = value; }
+            get { return this.projectedToleranceZoneValue; }
+            set { this.projectedToleranceZoneValue = value; }
         }
 
         /// <summary>
@@ -232,12 +252,12 @@ namespace netDxf.Entities
                 newLine = true;
             }
 
-            if (!(string.IsNullOrEmpty(this.height) && !this.showProjectedToleranceZoneSymbol))
+            if (!(string.IsNullOrEmpty(this.projectedToleranceZoneValue) && !this.showProjectedToleranceZoneSymbol))
             {
                 if (newLine)
                     value.Append("^J");
 
-                value.Append(this.height);
+                value.Append(this.projectedToleranceZoneValue);
                 if (this.showProjectedToleranceZoneSymbol)
                     value.Append("{\\Fgdt;p}");
                 newLine = true;
@@ -259,13 +279,13 @@ namespace netDxf.Entities
         /// </summary>
         /// <param name="s">A string that represents a tolerance to convert.</param>
         /// <returns>The Tolerance entity equivalent to the tolerance contained in s.</returns>
-        public static Tolerance ParseRepresentation(string s)
+        public static Tolerance ParseStringRepresentation(string s)
         {
             string[] lines = Regex.Split(s, "\\^J");
 
             ToleranceEntry t1 = null;
             ToleranceEntry t2 = null;
-            string height = string.Empty;
+            string projValue = string.Empty;
             bool showProjSymbol = false;
             string datumIdentifier = string.Empty;
 
@@ -309,7 +329,7 @@ namespace netDxf.Entities
                                 value.Append(token);
                             }
                         }
-                        height = value.ToString();
+                        projValue = value.ToString();
                     }
                 }
             }
@@ -318,7 +338,7 @@ namespace netDxf.Entities
             {
                 Entry1 = t1,
                 Entry2 = t2,
-                Height = height,
+                ProjectedToleranceZoneValue = projValue,
                 ShowProjectedToleranceZoneSymbol = showProjSymbol,
                 DatumIdentifier = datumIdentifier
             };
@@ -333,11 +353,11 @@ namespace netDxf.Entities
         /// <param name="s">A string that represents the tolerance to convert.</param>
         /// <param name="result">If the conversion has been successful, it contains the tolerance entity equivalent to the string representation; otherwise, null.</param>
         /// <returns>True if the string was converted successfully; otherwise, false.</returns>
-        public static bool TryParseRepresentation(string s, out Tolerance result)
+        public static bool TryParseStringRepresentation(string s, out Tolerance result)
         {
             try
             {
-                result = ParseRepresentation(s);
+                result = ParseStringRepresentation(s);
             }
             catch
             {
@@ -706,6 +726,43 @@ namespace netDxf.Entities
 
         #region overrides
 
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>
+        /// Non-uniform scaling is not supported, also is not possible to make a symmetry of a Tolerance.<br />
+        /// Matrix3 adopts the convention of using column vectors to represent a transformation matrix.
+        /// </remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newPosition = transformation * this.Position + translation;
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            transOW *= Matrix3.RotationZ(this.Rotation * MathHelper.DegToRad);
+
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal);
+            transWO = transWO.Transpose();
+
+            Vector3 v = transOW * Vector3.UnitX;
+            v = transformation * v;
+            v = transWO * v;
+            Vector2 axisPoint = new Vector2(v.X, v.Y);
+            double newRotation = Vector2.Angle(axisPoint) * MathHelper.RadToDeg;
+
+            double scale = axisPoint.Modulus();
+            double newTextHeight = this.TextHeight * scale;
+            if (MathHelper.IsZero(newTextHeight)) newTextHeight = MathHelper.Epsilon;
+
+            this.TextHeight = newTextHeight;
+            this.Position = newPosition;
+            this.Rotation = newRotation;
+            this.Normal = newNormal;
+        }
+
         public override object Clone()
         {
             Tolerance entity = new Tolerance
@@ -720,12 +777,13 @@ namespace netDxf.Entities
                 Normal = this.Normal,
                 IsVisible = this.IsVisible,
                 //Tolerance properties
-                Entry1 = (ToleranceEntry) this.entry1.Clone(),
-                Entry2 = (ToleranceEntry) this.entry2.Clone(),
-                Height = this.height,
+                Entry1 = (ToleranceEntry) this.entry1?.Clone(),
+                Entry2 = (ToleranceEntry) this.entry2?.Clone(),
+                ProjectedToleranceZoneValue = this.projectedToleranceZoneValue,
                 ShowProjectedToleranceZoneSymbol = this.showProjectedToleranceZoneSymbol,
                 DatumIdentifier = this.datumIdentifier,
                 Style = (DimensionStyle) this.style.Clone(),
+                TextHeight = this.textHeight,
                 Position = this.position,
                 Rotation = this.rotation
             };

@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2017 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -172,6 +172,36 @@ namespace netDxf.Entities
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>
+        /// Non-uniform scaling is not supported, create an ellipse from the circle data and transform that instead.<br />
+        /// Matrix3 adopts the convention of using column vectors to represent a transformation matrix.
+        /// </remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newCenter = transformation * this.Center + translation;
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal).Transpose();
+
+            Vector3 axis = transOW * new Vector3(this.Radius, 0.0, 0.0);
+            axis = transformation * axis;
+            axis = transWO * axis;
+            Vector2 axisPoint = new Vector2(axis.X, axis.Y);
+            double newRadius = axisPoint.Modulus();
+            if (MathHelper.IsZero(newRadius)) newRadius = MathHelper.Epsilon;
+
+            this.Normal = newNormal;
+            this.Center = newCenter;
+            this.Radius = newRadius;
+        }
 
         /// <summary>
         /// Creates a new Circle that is a copy of the current instance.

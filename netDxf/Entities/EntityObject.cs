@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -236,9 +236,9 @@ namespace netDxf.Entities
             get { return this.normal; }
             set
             {
-                this.normal = Vector3.Normalize(value);
-                if (Vector3.IsNaN(this.normal))
+                if(Vector3.Equals(Vector3.Zero, value))
                     throw new ArgumentException("The normal can not be the zero vector.", nameof(value));
+                this.normal = Vector3.Normalize(value);
             }
         }
 
@@ -271,6 +271,33 @@ namespace netDxf.Entities
         internal bool RemoveReactor(DxfObject o)
         {
             return this.reactors.Remove(o);
+        }
+
+        #endregion
+
+        #region public methods
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public abstract void TransformBy(Matrix3 transformation, Vector3 translation);
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 4x4 transformation matrix.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <remarks>Matrix4 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public void TransformBy(Matrix4 transformation)
+        {
+            Matrix3 m = new Matrix3(transformation.M11, transformation.M12, transformation.M13,
+                                    transformation.M21, transformation.M22, transformation.M23,
+                                    transformation.M31, transformation.M32, transformation.M33);
+            Vector3 v = new Vector3(transformation.M14, transformation.M24, transformation.M34);
+
+            this.TransformBy(m, v);
         }
 
         #endregion

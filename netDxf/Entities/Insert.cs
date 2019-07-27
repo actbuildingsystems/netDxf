@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2016 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -87,6 +87,10 @@ namespace netDxf.Entities
                 att.Owner = this;
             }
 
+            this.block = null;
+            this.position = Vector3.Zero;
+            this.scale = new Vector3(1.0);
+            this.rotation = 0.0;
             this.endSequence = new EndSequence(this);
 
         }
@@ -116,6 +120,16 @@ namespace netDxf.Entities
         /// <param name="block">Insert block definition.</param>
         /// <param name="position">Insert <see cref="Vector3">point</see> in world coordinates.</param>
         public Insert(Block block, Vector3 position)
+            : this(block, position, 1.0)
+        {           
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>Insert</c> class.
+        /// </summary>
+        /// <param name="block">Insert block definition.</param>
+        /// <param name="position">Insert <see cref="Vector3">point</see> in world coordinates.</param>
+        public Insert(Block block, Vector3 position, double scale)
             : base(EntityType.Insert, DxfObjectCode.Insert)
         {
             if (block == null)
@@ -123,7 +137,9 @@ namespace netDxf.Entities
 
             this.block = block;
             this.position = position;
-            this.scale = new Vector3(1.0);
+            if (scale <= 0)
+                throw new ArgumentOutOfRangeException(nameof(scale), scale, "The Insert scale must be greater than zero.");
+            this.scale = new Vector3(scale);
             this.rotation = 0.0;
             this.endSequence = new EndSequence(this);
 
@@ -144,6 +160,15 @@ namespace netDxf.Entities
         #endregion
 
         #region public properties
+
+        /// <summary>
+        /// Gets or sets the default drawing units to obtain the Insert transformation matrix, when the current Insert entity does not belong to a DXF document.
+        /// </summary>
+        public static DrawingUnits DefaultInsUnits
+        {
+            get;
+            set;
+        }
 
         /// <summary>
         /// Gets the insert list of <see cref="Attribute">attributes</see>.
@@ -174,10 +199,16 @@ namespace netDxf.Entities
         /// <summary>
         /// Gets or sets the insert <see cref="Vector3">scale</see>.
         /// </summary>
+        /// <remarks>None of the vector scale components can be zero.</remarks>
         public Vector3 Scale
         {
             get { return this.scale; }
-            set { this.scale = value; }
+            set
+            {
+                if (MathHelper.IsZero(value.X) || MathHelper.IsZero(value.Y) || MathHelper.IsZero(value.Z))
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "None of the vector scale components can be zero.");
+                this.scale = value;
+            }
         }
 
         /// <summary>
@@ -226,6 +257,7 @@ namespace netDxf.Entities
                 {
                     Owner = this
                 };
+
                 atts.Add(att);
                 this.OnAttributeAddedEvent(att);
             }
@@ -237,14 +269,39 @@ namespace netDxf.Entities
         /// <summary>
         /// Calculates the insertion rotation matrix.
         /// </summary>
+        /// <returns>The insert transformation matrix.</returns>
+        /// <remarks>
+        /// This method uses the DefaultInsUnits defined by the Insert class to obtain the scale between the drawing and the block units.
+        /// Additionally, if the insert belongs to a block the units to use are the ones defined in the BlockRecord,
+        /// and if the insert belongs to a layout the units to use are the ones defined in the document drawing variable InsUnits.
+        /// </remarks>
+        public Matrix3 GetTransformation()
+        {
+            DrawingUnits insUnits;
+            if (this.Owner == null)
+                insUnits = DefaultInsUnits;
+            else
+                insUnits = this.Owner.Record.Layout == null ? this.Owner.Record.Units : this.Owner.Record.Owner.Owner.DrawingVariables.InsUnits;
+
+            double docScale = UnitHelper.ConversionFactor(this.Block.Record.Units, insUnits);
+            Matrix3 trans = MathHelper.ArbitraryAxis(this.Normal);
+            trans *= Matrix3.RotationZ(this.rotation * MathHelper.DegToRad);
+            trans *= Matrix3.Scale(this.scale * docScale);
+
+            return trans;
+        }
+
+        /// <summary>
+        /// Calculates the insertion rotation matrix.
+        /// </summary>
         /// <param name="insertionUnits">The insertion units.</param>
-        /// <returns>The insert rotation matrix.</returns>
+        /// <returns>The insert transformation matrix.</returns>
         public Matrix3 GetTransformation(DrawingUnits insertionUnits)
         {
             double docScale = UnitHelper.ConversionFactor(this.Block.Record.Units, insertionUnits);
             Matrix3 trans = MathHelper.ArbitraryAxis(this.Normal);
-            trans *= Matrix3.RotationZ(this.rotation*MathHelper.DegToRad);
-            trans *= Matrix3.Scale(this.scale*docScale);
+            trans *= Matrix3.RotationZ(this.rotation * MathHelper.DegToRad);
+            trans *= Matrix3.Scale(this.scale * docScale);
 
             return trans;
         }
@@ -267,17 +324,8 @@ namespace netDxf.Entities
             if (this.attributes.Count == 0)
                 return;
 
-            DrawingUnits insUnits;
-
-            if (this.Owner == null)
-                insUnits = DrawingUnits.Unitless;
-            else
-                // if the insert belongs to a block the units to use are the ones defined in the BlockRecord
-                // if the insert belongs to a layout the units to use are the ones defined in the Document
-                insUnits = this.Owner.Record.Layout == null ? this.Owner.Record.Units : this.Owner.Record.Owner.Owner.DrawingVariables.InsUnits;
-
-            Vector3 insScale = this.scale*UnitHelper.ConversionFactor(this.block.Record.Units, insUnits);
-            Matrix3 insTrans = this.GetTransformation(insUnits);
+            Matrix3 transformation = this.GetTransformation();
+            Vector3 translation = this.Position - transformation * this.block.Origin;
 
             foreach (Attribute att in this.attributes)
             {
@@ -285,52 +333,266 @@ namespace netDxf.Entities
                 if (attdef == null)
                     continue;
 
-                Vector3 wcsAtt = insTrans*(attdef.Position - this.block.Origin);
-                att.Position = this.position + wcsAtt;
+                // reset the attribute to its default values
+                att.Position = attdef.Position;
+                att.Height = attdef.Height;
+                att.Width = attdef.Width;
+                att.WidthFactor = attdef.WidthFactor;
+                att.ObliqueAngle = attdef.ObliqueAngle;
+                att.Rotation = attdef.Rotation;
+                att.Normal = attdef.Normal;
+                att.IsBackward = attdef.IsBackward;
+                att.IsUpsideDown = attdef.IsUpsideDown;
 
-                Vector2 txtU = new Vector2(attdef.WidthFactor, 0.0);
-                txtU = MathHelper.Transform(txtU, attdef.Rotation*MathHelper.DegToRad, CoordinateSystem.Object, CoordinateSystem.World);
-                Vector3 ocsTxtU = MathHelper.Transform(new Vector3(txtU.X, txtU.Y, 0.0), attdef.Normal, CoordinateSystem.Object, CoordinateSystem.World);
-                Vector3 wcsTxtU = insTrans*ocsTxtU;
+                att.TransformBy(transformation, translation);
+            }
+        }
 
-                Vector2 txtV = new Vector2(0.0, attdef.Height);
-                txtV = MathHelper.Transform(txtV, attdef.Rotation*MathHelper.DegToRad, CoordinateSystem.Object, CoordinateSystem.World);
-                Vector3 ocsTxtV = MathHelper.Transform(new Vector3(txtV.X, txtV.Y, 0.0), attdef.Normal, CoordinateSystem.Object, CoordinateSystem.World);
-                Vector3 wcsTxtV = insTrans*ocsTxtV;
+        /// <summary>
+        /// Explodes the current insert.
+        /// </summary>
+        /// <returns>A list of entities.</returns>
+        public List<EntityObject> Explode()
+        {
+            List<EntityObject> entities = new List<EntityObject>();
+            Matrix3 transformation = this.GetTransformation();
+            Vector3 translation = this.Position - transformation * this.block.Origin;
 
-                Vector3 txtNormal = Vector3.CrossProduct(wcsTxtU, wcsTxtV);
-                att.Normal = txtNormal;
+            foreach (EntityObject entity in this.block.Entities)
+            {
+                Vector3 localScale = MathHelper.Transform(this.Scale, entity.Normal, CoordinateSystem.World, CoordinateSystem.Object);
+                bool isUniformScale = MathHelper.IsEqual(localScale.X, localScale.Y);
 
-                double txtHeight = MathHelper.PointLineDistance(wcsTxtV, Vector3.Zero, Vector3.Normalize(wcsTxtU));
-                att.Height = txtHeight;
+                // entities with reactors are associated with other entities they will handle the transformation
+                if (entity.Reactors.Count > 0)
+                    continue;
 
-                double txtAng = Vector2.Angle(new Vector2(txtU.X*insScale.X, txtU.Y*insScale.Y))*MathHelper.RadToDeg;
-                if (Vector3.Equals(attdef.Normal, Vector3.UnitZ))
+                if(!isUniformScale)
                 {
-                    att.Rotation = this.rotation + txtAng;
+                    switch (entity.Type)
+                    {
+                        case EntityType.Circle:
+                        {
+                            Circle circle = (Circle) entity;
+                            Ellipse ellipse = new Ellipse
+                            {
+                                //EntityObject properties
+                                Layer = (Layer) entity.Layer.Clone(),
+                                Linetype = (Linetype) entity.Linetype.Clone(),
+                                Color = (AciColor) entity.Color.Clone(),
+                                Lineweight = entity.Lineweight,
+                                Transparency = (Transparency) entity.Transparency.Clone(),
+                                LinetypeScale = entity.LinetypeScale,
+                                Normal = entity.Normal,
+                                IsVisible = entity.IsVisible,
+                                //Ellipse properties
+                                Center = circle.Center,
+                                MajorAxis = 2 * circle.Radius,
+                                MinorAxis = 2 * circle.Radius,
+                                Thickness = circle.Thickness
+                            };
 
-                    //double txtWidth = MathHelper.PointLineDistance(wcsTxtU, Vector3.Zero, Vector3.Normalize(wcsTxtV));
-                    //att.WidthFactor = txtWidth;
-                    att.WidthFactor = attdef.WidthFactor;
+                            ellipse.TransformBy(transformation, translation);
+                            entities.Add(ellipse);
+                            break;
+                        }
+                        case EntityType.Arc:
+                        {
+                            Arc arc = (Arc) entity;
+                            Ellipse ellipse = new Ellipse
+                            {
+                                //EntityObject properties
+                                Layer = (Layer) entity.Layer.Clone(),
+                                Linetype = (Linetype) entity.Linetype.Clone(),
+                                Color = (AciColor) entity.Color.Clone(),
+                                Lineweight = entity.Lineweight,
+                                Transparency = (Transparency) entity.Transparency.Clone(),
+                                LinetypeScale = entity.LinetypeScale,
+                                Normal = entity.Normal,
+                                IsVisible = entity.IsVisible,
+                                //Ellipse properties
+                                Center = arc.Center,
+                                MajorAxis = 2 * arc.Radius,
+                                MinorAxis = 2 * arc.Radius,
+                                StartAngle = arc.StartAngle,
+                                EndAngle = arc.EndAngle,
+                                Thickness = arc.Thickness
+                            };
 
-                    //double a1d1Ang = Vector2.Angle(new Vector2(txtV.X * insScale.X, txtV.Y * insScale.Y)) * MathHelper.RadToDeg;
-                    //double oblique = 90 - (a1d1Ang - txtAng);
-                    //if (oblique < -85.0 || oblique > 85.0) oblique = Math.Sign(oblique) * 85;
-                    //att.ObliqueAngle = oblique;
-                    att.ObliqueAngle = attdef.ObliqueAngle;
+                            ellipse.TransformBy(transformation, translation);
+                            entities.Add(ellipse);
+                            break;
+                        }
+                        case EntityType.LwPolyline:
+                        {
+                            List<EntityObject> newEntities = ((LwPolyline) entity).Explode();
+                            foreach (EntityObject newEntity in newEntities)
+                            {
+                                if (newEntity.Type == EntityType.Arc)
+                                {
+                                    Arc arc = (Arc) newEntity;
+                                    Ellipse ellipse = new Ellipse
+                                    {
+                                        //EntityObject properties
+                                        Layer = (Layer) entity.Layer.Clone(),
+                                        Linetype = (Linetype) entity.Linetype.Clone(),
+                                        Color = (AciColor) entity.Color.Clone(),
+                                        Lineweight = entity.Lineweight,
+                                        Transparency = (Transparency) entity.Transparency.Clone(),
+                                        LinetypeScale = entity.LinetypeScale,
+                                        Normal = entity.Normal,
+                                        IsVisible = entity.IsVisible,
+                                        //Ellipse properties
+                                        Center = arc.Center,
+                                        MajorAxis = 2 * arc.Radius,
+                                        MinorAxis = 2 * arc.Radius,
+                                        StartAngle = arc.StartAngle,
+                                        EndAngle = arc.EndAngle,
+                                        Thickness = arc.Thickness
+                                    };
+
+                                    ellipse.TransformBy(transformation, translation);
+                                    entities.Add(ellipse);
+                                }
+                                else
+                                {
+                                    newEntity.TransformBy(transformation, translation);
+                                    entities.Add(newEntity);
+                                }                                
+                            }
+                            break;
+                        }
+                        case EntityType.MLine:
+                        {
+                            List<EntityObject> newEntities = ((MLine)entity).Explode();
+                            foreach (EntityObject newEntity in newEntities)
+                            {
+                                if (newEntity.Type == EntityType.Arc)
+                                {
+                                    Arc arc = (Arc) newEntity;
+                                    Ellipse ellipse = new Ellipse
+                                    {
+                                        //EntityObject properties
+                                        Layer = (Layer) entity.Layer.Clone(),
+                                        Linetype = (Linetype) entity.Linetype.Clone(),
+                                        Color = (AciColor) entity.Color.Clone(),
+                                        Lineweight = entity.Lineweight,
+                                        Transparency = (Transparency) entity.Transparency.Clone(),
+                                        LinetypeScale = entity.LinetypeScale,
+                                        Normal = entity.Normal,
+                                        IsVisible = entity.IsVisible,
+                                        //Ellipse properties
+                                        Center = arc.Center,
+                                        MajorAxis = 2 * arc.Radius,
+                                        MinorAxis = 2 * arc.Radius,
+                                        StartAngle = arc.StartAngle,
+                                        EndAngle = arc.EndAngle,
+                                        Thickness = arc.Thickness
+                                    };
+
+                                    ellipse.TransformBy(transformation, translation);
+                                    entities.Add(ellipse);
+                                }
+                                else
+                                {
+                                    newEntity.TransformBy(transformation, translation);
+                                    entities.Add(newEntity);
+                                }                             
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            EntityObject newEntity = (EntityObject) entity.Clone();
+                            newEntity.TransformBy(transformation, translation);
+                            entities.Add(newEntity);
+                            break;
+                        }
+                    }
                 }
                 else
                 {
-                    att.Rotation = txtAng;
-                    att.WidthFactor = attdef.WidthFactor;
-                    att.ObliqueAngle = attdef.ObliqueAngle;
+                    EntityObject newEntity = (EntityObject) entity.Clone();
+                    newEntity.TransformBy(transformation, translation);
+                    entities.Add(newEntity);
                 }
             }
+
+            foreach (Attribute attribute in this.attributes)
+            {
+                // the attributes will be exploded as a Text entity
+                Text text = new Text
+                {
+                    //Attribute properties
+                    Layer = (Layer) attribute.Layer.Clone(),
+                    Linetype = (Linetype) attribute.Linetype.Clone(),
+                    Color = (AciColor) attribute.Color.Clone(),
+                    Lineweight = attribute.Lineweight,
+                    Transparency = (Transparency) attribute.Transparency.Clone(),
+                    LinetypeScale = attribute.LinetypeScale,
+                    Normal = attribute.Normal,
+                    IsVisible = attribute.IsVisible,
+                    Height = attribute.Height,
+                    WidthFactor = attribute.WidthFactor,
+                    ObliqueAngle = attribute.ObliqueAngle,
+                    Value = attribute.Value.ToString(),
+                    Style = (TextStyle) attribute.Style.Clone(),
+                    Position = attribute.Position,
+                    Rotation = attribute.Rotation,
+                    Alignment = attribute.Alignment,
+                    IsBackward = attribute.IsBackward,
+                    IsUpsideDown = attribute.IsUpsideDown
+                };
+                entities.Add(text);
+            }
+
+            return entities;
         }
 
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newPosition = transformation * this.Position + translation;
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            transOW *= Matrix3.RotationZ(this.Rotation * MathHelper.DegToRad);
+
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal);
+            transWO = transWO.Transpose();
+
+            Vector3 v = transOW * Vector3.UnitX;
+            v = transformation * v;
+            v = transWO * v;
+            double newRotation = Vector2.Angle(new Vector2(v.X, v.Y))* MathHelper.RadToDeg;
+
+            transWO = Matrix3.RotationZ(newRotation * MathHelper.DegToRad).Transpose() * transWO;
+
+            Vector3 s = transOW * this.Scale;
+            s = transformation * s;
+            s = transWO * s;
+            Vector3 newScale = new Vector3(
+                MathHelper.IsZero(s.X) ? MathHelper.Epsilon : s.X,
+                MathHelper.IsZero(s.Y) ? MathHelper.Epsilon : s.Y,
+                MathHelper.IsZero(s.Z) ? MathHelper.Epsilon : s.Z);
+
+            this.Normal = newNormal;
+            this.Position = newPosition;
+            this.Scale = newScale;
+            this.Rotation = newRotation;
+
+            this.TransformAttributes();
+        }
 
         /// <summary>
         /// Assigns a handle to the object based in a integer counter.
@@ -387,182 +649,6 @@ namespace netDxf.Entities
 
             return entity;
         }
-
-        #endregion
-
-        #region Explode
-
-        public List<EntityObject> Explode()
-        {
-            List<EntityObject> entities = new List<EntityObject>();
-            Matrix3 trans = this.GetTransformation( DrawingUnits.Unitless);
-            Vector3 pos = this.position - trans * this.block.Origin;
-
-            foreach (EntityObject entity in this.block.Entities)
-            {
-                switch (entity.Type)
-                {
-                    //case (EntityType.Arc):
-                    //    entities.Add(ProcessArc((Arc)entity, trans, pos, this.scale, this.rotation));
-                    //    break;
-                    //case (EntityType.Circle):
-                    //    entities.Add(ProcessCircle((Circle)entity, trans, pos, this.scale, this.rotation));
-                    //    break;
-                    //case (EntityType.Ellipse):
-                    //    entities.Add(ProcessEllipse((Ellipse)entity, trans, pos, this.scale, this.rotation));
-                    //    break;
-                    //case (EntityType.Face3D):
-                    //    entities.Add(ProcessFace3d((Face3d)entity, trans, pos));
-                    //    break;
-                    //case (EntityType.Hatch):
-                    //    entities.Add(ProcessHatch((Hatch)entity, trans, pos, this.position, this.Normal, this.scale, this.rotation));
-                    //    break;
-                    case (EntityType.Line):
-                        entities.Add(ProcessLine((Line)entity, trans, pos));
-                        break;
-                }
-            }
-
-            return entities;
-        }
-
-        #region private methods
-
-        //private static EntityObject ProcessArc(Arc arc, Matrix3 trans, Vector3 pos, Vector3 scale, double rotation)
-        //{
-        //    EntityObject copy;
-        //    if (MathHelper.IsEqual(scale.X, scale.Y))
-        //    {
-        //        copy = (Arc)arc.Clone();
-        //        ((Arc)copy).Center = trans * arc.Center + pos;
-        //        ((Arc)copy).Radius = arc.Radius * scale.X;
-        //        ((Arc)copy).StartAngle = arc.StartAngle + rotation;
-        //        ((Arc)copy).EndAngle = arc.EndAngle + rotation;
-        //        copy.Normal = trans * arc.Normal;
-        //        return copy;
-        //    }
-        //    copy = new Ellipse
-        //    {
-        //        Center = trans * arc.Center + pos,
-        //        MajorAxis = 2 * arc.Radius * scale.X,
-        //        MinorAxis = 2 * arc.Radius * scale.Y,
-        //        StartAngle = arc.StartAngle,
-        //        EndAngle = arc.EndAngle,
-        //        Rotation = rotation,
-        //        Thickness = arc.Thickness,
-        //        Color = arc.Color,
-        //        Layer = arc.Layer,
-        //        Linetype = arc.Linetype,
-        //        LinetypeScale = arc.LinetypeScale,
-        //        Lineweight = arc.Lineweight,
-        //        Normal = trans * arc.Normal,
-        //        XData = arc.XData
-        //    };
-
-        //    return copy;
-        //}
-
-        //private static EntityObject ProcessCircle(Circle circle, Matrix3 trans, Vector3 pos, Vector3 scale, double rotation)
-        //{
-        //    EntityObject copy;
-        //    if (MathHelper.IsEqual(scale.X, scale.Y))
-        //    {
-        //        copy = (Circle)circle.Clone();
-        //        ((Circle)copy).Center = trans * circle.Center + pos;
-        //        ((Circle)copy).Radius = circle.Radius * scale.X;
-        //        copy.Normal = trans * circle.Normal;
-        //        return copy;
-        //    }
-        //    copy = new Ellipse
-        //    {
-        //        Center = trans * circle.Center + pos,
-        //        MajorAxis = 2 * circle.Radius * scale.X,
-        //        MinorAxis = 2 * circle.Radius * scale.Y,
-        //        Rotation = rotation,
-        //        Thickness = circle.Thickness,
-        //        Color = circle.Color,
-        //        Layer = circle.Layer,
-        //        Linetype = circle.Linetype,
-        //        LinetypeScale = circle.LinetypeScale,
-        //        Lineweight = circle.Lineweight,
-        //        Normal = trans * circle.Normal,
-        //        XData = circle.XData
-        //    };
-        //    return copy;
-        //}
-
-        //private static Ellipse ProcessEllipse(Ellipse ellipse, Matrix3 trans, Vector3 pos, Vector3 scale, double rotation)
-        //{
-        //    Ellipse copy = (Ellipse)ellipse.Clone();
-        //    copy.Center = trans * ellipse.Center + pos;
-        //    copy.MajorAxis = ellipse.MajorAxis * scale.X;
-        //    copy.MinorAxis = ellipse.MinorAxis * scale.Y;
-        //    copy.Rotation = rotation;
-        //    copy.Normal = trans * ellipse.Normal;
-
-        //    return copy;
-        //}
-
-        //private static Face3d ProcessFace3d(Face3d face3d, Matrix3 trans, Vector3 pos)
-        //{
-        //    Face3d copy = (Face3d)face3d.Clone();
-        //    copy.FirstVertex = trans * face3d.FirstVertex + pos;
-        //    copy.SecondVertex = trans * face3d.SecondVertex + pos;
-        //    copy.ThirdVertex = trans * face3d.ThirdVertex + pos;
-        //    copy.FourthVertex = trans * face3d.FourthVertex + pos;
-
-        //    return copy;
-        //}
-
-        //private static Hatch ProcessHatch(Hatch hatch, Matrix3 trans, Vector3 pos, Vector3 insertPos, Vector3 normal, Vector3 scale, double rotation)
-        //{
-        //    List<HatchBoundaryPath> boundary = new List<HatchBoundaryPath>();
-        //    Matrix3 dataTrans = Matrix3.RotationZ(rotation * MathHelper.DegToRad) * Matrix3.Scale(scale);
-        //    Vector3 localPos = MathHelper.Transform(insertPos, normal, MathHelper.CoordinateSystem.World, MathHelper.CoordinateSystem.Object);
-        //    foreach (HatchBoundaryPath path in hatch.BoundaryPaths)
-        //    {
-        //        List<EntityObject> data = new List<EntityObject>();
-        //        foreach (EntityObject entity in path.Data)
-        //        {
-        //            switch (entity.Type)
-        //            {
-        //                case (EntityType.Arc):
-        //                    data.Add(ProcessArc((Arc)entity, trans, pos, scale, 0));
-        //                    break;
-        //                case (EntityType.Circle):
-        //                    data.Add(ProcessCircle((Circle)entity, trans, pos, scale, 0));
-        //                    break;
-        //                case (EntityType.Ellipse):
-        //                    data.Add(ProcessEllipse((Ellipse)entity, trans, pos, scale, 0));
-        //                    break;
-        //                case (EntityType.Line):
-        //                    data.Add(ProcessLine((Line)entity, dataTrans, localPos));
-        //                    break;
-        //            }
-        //        }
-
-        //        boundary.Add(new HatchBoundaryPath(data));
-        //    }
-
-        //    // the insert scale will not modify the hatch pattern even thought AutoCad does
-        //    Hatch copy = (Hatch)hatch.Clone();
-        //    copy.BoundaryPaths = boundary;
-        //    copy.Elevation = localPos.Z + hatch.Elevation;
-        //    copy.Normal = trans * hatch.Normal;
-        //    return copy;
-        //}
-
-        private static Line ProcessLine(Line line, Matrix3 trans, Vector3 pos)
-        {
-            Line copy = (Line)line.Clone();
-            copy.StartPoint = trans * line.StartPoint + pos;
-            copy.EndPoint = trans * line.EndPoint + pos;
-            copy.Normal = trans * line.Normal;
-
-            return copy;
-        }
-
-        #endregion
 
         #endregion
     }

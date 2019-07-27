@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using netDxf.Tables;
@@ -145,6 +146,26 @@ namespace netDxf.Entities
         /// </summary>
         /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
         /// <param name="height">Text height.</param>
+        public MText(Vector2 position, double height)
+            : this(string.Empty, position, height, 0.0, TextStyle.Default)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>MText</c> class.
+        /// </summary>
+        /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
+        /// <param name="height">Text height.</param>
+        public MText(Vector3 position, double height)
+            : this(string.Empty, position, height, 0.0, TextStyle.Default)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>MText</c> class.
+        /// </summary>
+        /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
+        /// <param name="height">Text height.</param>
         /// <param name="rectangleWidth">Reference rectangle width.</param>
         public MText(Vector3 position, double height, double rectangleWidth)
             : this(string.Empty, position, height, rectangleWidth, TextStyle.Default)
@@ -192,10 +213,19 @@ namespace netDxf.Entities
         /// <param name="text">Text string.</param>
         /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
         /// <param name="height">Text height.</param>
-        /// <param name="rectangleWidth">Reference rectangle width.</param>
-        /// <param name="style">Text <see cref="TextStyle">style</see>.</param>
-        public MText(string text, Vector2 position, double height, double rectangleWidth, TextStyle style)
-            : this(text, new Vector3(position.X, position.Y, 0.0), height, rectangleWidth, style)
+        public MText(string text, Vector2 position, double height)
+            : this(text, new Vector3(position.X, position.Y, 0.0), height, 0.0, TextStyle.Default)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>MText</c> class.
+        /// </summary>
+        /// <param name="text">Text string.</param>
+        /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
+        /// <param name="height">Text height.</param>
+        public MText(string text, Vector3 position, double height)
+            : this(text, position, height, 0.0, TextStyle.Default)
         {
         }
 
@@ -231,6 +261,19 @@ namespace netDxf.Entities
         /// <param name="height">Text height.</param>
         /// <param name="rectangleWidth">Reference rectangle width.</param>
         /// <param name="style">Text <see cref="TextStyle">style</see>.</param>
+        public MText(string text, Vector2 position, double height, double rectangleWidth, TextStyle style)
+            : this(text, new Vector3(position.X, position.Y, 0.0), height, rectangleWidth, style)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <c>MText</c> class.
+        /// </summary>
+        /// <param name="text">Text string.</param>
+        /// <param name="position">Text <see cref="Vector2">position</see> in world coordinates.</param>
+        /// <param name="height">Text height.</param>
+        /// <param name="rectangleWidth">Reference rectangle width.</param>
+        /// <param name="style">Text <see cref="TextStyle">style</see>.</param>
         public MText(string text, Vector3 position, double height, double rectangleWidth, TextStyle style)
             : base(EntityType.MText, DxfObjectCode.MText)
         {
@@ -253,6 +296,15 @@ namespace netDxf.Entities
         #endregion
 
         #region public properties
+
+        /// <summary>
+        /// Gets or sets if the text will be mirrored when a symmetry is performed, when the current MText entity does not belong to a DXF document.
+        /// </summary>
+        public static bool DefaultMirrText
+        {
+            get;
+            set;
+        }
 
         /// <summary>
         /// Gets or sets the text rotation in degrees.
@@ -469,7 +521,7 @@ namespace netDxf.Entities
 
             string f;
             if (string.IsNullOrEmpty(options.FontName))
-                f = this.style.IsTrueType ? this.style.FontFamilyName : this.style.FontFile;
+                f = string.IsNullOrEmpty(this.style.FontFamilyName) ? this.style.FontFile : this.style.FontFamilyName;
             else
                 f = options.FontName;
 
@@ -621,94 +673,225 @@ namespace netDxf.Entities
             //text = text.Replace("%%p", "±");
 
             StringBuilder rawText = new StringBuilder();
-            CharEnumerator chars = txt.GetEnumerator();
 
-            while (chars.MoveNext())
+            using (CharEnumerator chars = txt.GetEnumerator())
             {
-                char token = chars.Current;
-                if (token == '\\') // is a formatting command
+                while (chars.MoveNext())
                 {
-                    if (chars.MoveNext())
-                        token = chars.Current;
-                    else
-                        return rawText.ToString(); // premature end of text
-
-                    if (token == '\\' | token == '{' | token == '}') // escape chars
-                        rawText.Append(token);
-                    else if (token == 'L' | token == 'l' | token == 'O' | token == 'o' | token == 'K' | token == 'k')
-                    {/* discard one char commands */}
-                    else if (token == 'P' | token == 'X')
-                        rawText.Append(Environment.NewLine); // replace the end paragraph command with the standard new line, carriage return code "\r\n".
-                    else if (token == 'S')
+                    char token = chars.Current;
+                    if (token == '\\') // is a formatting command
                     {
                         if (chars.MoveNext())
                             token = chars.Current;
                         else
                             return rawText.ToString(); // premature end of text
 
-                        // we want to preserve the text under the stacking command
-                        StringBuilder data = new StringBuilder();
-
-                        while (token != ';') 
+                        if (token == '\\' | token == '{' | token == '}') // escape chars
+                            rawText.Append(token);
+                        else if (token == 'L' | token == 'l' | token == 'O' | token == 'o' | token == 'K' | token == 'k')
                         {
-                            if (token == '\\')
-                            {
-                                if (chars.MoveNext())
-                                    token = chars.Current;
-                                else
-                                    return rawText.ToString(); // premature end of text
-
-                                data.Append(token);
-                            }
-                            else if (token == '^')
-                            {
-                                if (chars.MoveNext())
-                                    token = chars.Current;
-                                else
-                                    return rawText.ToString(); // premature end of text
-
-                                // discard the code "^ " that defines super and subscript texts
-                                if (token != ' ') data.Append("^" + token);
-                            }
-                            else
-                            {                              
-                                // replace the '#' stacking command by '/'
-                                // non command characters '#' are written as '\#'
-                                data.Append(token == '#' ? '/' : token);
-                            }
-
+                            /* discard one char commands */
+                        }
+                        else if (token == 'P' | token == 'X')
+                            rawText.Append(Environment.NewLine); // replace the end paragraph command with the standard new line, carriage return code "\r\n".
+                        else if (token == 'S')
+                        {
                             if (chars.MoveNext())
                                 token = chars.Current;
                             else
                                 return rawText.ToString(); // premature end of text
-                        }
 
-                        rawText.Append(data);
+                            // we want to preserve the text under the stacking command
+                            StringBuilder data = new StringBuilder();
+
+                            while (token != ';')
+                            {
+                                if (token == '\\')
+                                {
+                                    if (chars.MoveNext())
+                                        token = chars.Current;
+                                    else
+                                        return rawText.ToString(); // premature end of text
+
+                                    data.Append(token);
+                                }
+                                else if (token == '^')
+                                {
+                                    if (chars.MoveNext())
+                                        token = chars.Current;
+                                    else
+                                        return rawText.ToString(); // premature end of text
+
+                                    // discard the code "^ " that defines super and subscript texts
+                                    if (token != ' ') data.Append("^" + token);
+                                }
+                                else
+                                {
+                                    // replace the '#' stacking command by '/'
+                                    // non command characters '#' are written as '\#'
+                                    data.Append(token == '#' ? '/' : token);
+                                }
+
+                                if (chars.MoveNext())
+                                    token = chars.Current;
+                                else
+                                    return rawText.ToString(); // premature end of text
+                            }
+
+                            rawText.Append(data);
+                        }
+                        else
+                        {
+                            // formatting commands of more than one character always terminate in ';'
+                            // discard all information
+                            while (token != ';')
+                            {
+                                if (chars.MoveNext())
+                                    token = chars.Current;
+                                else
+                                    return rawText.ToString(); // premature end of text
+                            }
+                        }
                     }
-                    else 
+                    else if (token == '{' | token == '}')
                     {
-                        // formatting commands of more than one character always terminate in ';'
-                        // discard all information
-                        while (token != ';')
-                        {
-                            if (chars.MoveNext())
-                                token = chars.Current;
-                            else
-                                return rawText.ToString(); // premature end of text
-                        }
+                        /* discard group markers */
                     }
+                    else // char is what it is, a character
+                        rawText.Append(token);
                 }
-                else if (token == '{' | token == '}')
-                {/* discard group markers */}
-                else // char is what it is, a character
-                    rawText.Append(token);
             }
+
             return rawText.ToString();
         }
 
         #endregion
 
         #region overrides
+
+        /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>
+        /// Non-uniform scaling is not supported, it would require to decompose each line into independent Text entities.
+        /// When the current Text entity does not belong to a DXF document, the text will use the DefaultMirrText when a symmetry is performed;
+        /// otherwise, the drawing variable MirrText will be used.<br />
+        /// Matrix3 adopts the convention of using column vectors to represent a transformation matrix.
+        /// </remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            bool mirrText = this.Owner == null ? DefaultMirrText : this.Owner.Record.Owner.Owner.DrawingVariables.MirrText;
+
+            Vector3 newPosition = transformation * this.Position + translation;
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal);
+            transWO = transWO.Transpose();
+
+            List<Vector2> uv = MathHelper.Transform(
+                new[]
+                {
+                    Vector2.UnitX, Vector2.UnitY
+                }, 
+                this.Rotation * MathHelper.DegToRad,
+                CoordinateSystem.Object, CoordinateSystem.World);
+
+            Vector3 v;
+            v = transOW * new Vector3(uv[0].X, uv[0].Y, 0.0);
+            v = transformation * v;
+            v = transWO * v;
+            Vector2 newUvector = new Vector2(v.X, v.Y);
+
+            // the MText entity does not support non-uniform scaling
+            double scale = newUvector.Modulus();
+
+            v = transOW * new Vector3(uv[1].X, uv[1].Y, 0.0);
+            v = transformation * v;
+            v = transWO * v;
+            Vector2 newVvector = new Vector2(v.X, v.Y);
+
+            double newRotation = Vector2.Angle(newUvector) * MathHelper.RadToDeg;
+
+            if (mirrText)
+            {
+                if (Vector2.CrossProduct(newUvector, newVvector) < 0.0)
+                {
+                    newRotation += 180;
+                    newNormal = -newNormal; 
+                }
+            }
+            else
+            {
+                if (Vector2.CrossProduct(newUvector, newVvector) < 0.0)
+                {
+                    if (Vector2.DotProduct(newUvector, uv[0]) < 0.0)
+                    {
+                        newRotation += 180;
+
+                        switch (this.AttachmentPoint)
+                        {
+                            case MTextAttachmentPoint.TopLeft:
+                                this.AttachmentPoint = MTextAttachmentPoint.TopRight;
+                                break;
+                            case MTextAttachmentPoint.TopRight:
+                                this.AttachmentPoint = MTextAttachmentPoint.TopLeft;
+                                break;
+                            case MTextAttachmentPoint.MiddleLeft:
+                                this.AttachmentPoint = MTextAttachmentPoint.MiddleRight;
+                                break;
+                            case MTextAttachmentPoint.MiddleRight:
+                                this.AttachmentPoint = MTextAttachmentPoint.MiddleLeft;
+                                break;
+                            case MTextAttachmentPoint.BottomLeft:
+                                this.AttachmentPoint = MTextAttachmentPoint.BottomRight;
+                                break;
+                            case MTextAttachmentPoint.BottomRight:
+                                this.AttachmentPoint = MTextAttachmentPoint.BottomLeft;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        switch (this.AttachmentPoint)
+                        {
+                            case MTextAttachmentPoint.TopLeft:
+                                this.AttachmentPoint = MTextAttachmentPoint.BottomLeft;
+                                break;
+                            case MTextAttachmentPoint.TopCenter:
+                                this.attachmentPoint = MTextAttachmentPoint.BottomCenter;
+                                break;
+                            case MTextAttachmentPoint.TopRight:
+                                this.AttachmentPoint = MTextAttachmentPoint.BottomRight;
+                                break;
+                            case MTextAttachmentPoint.BottomLeft:
+                                this.AttachmentPoint = MTextAttachmentPoint.TopLeft;
+                                break;
+                            case MTextAttachmentPoint.BottomCenter:
+                                this.attachmentPoint = MTextAttachmentPoint.TopCenter;
+                                break;
+                            case MTextAttachmentPoint.BottomRight:
+                                this.AttachmentPoint = MTextAttachmentPoint.TopRight;
+                                break;
+                        }
+                    }
+                }
+            }
+
+            double newHeight = this.Height * scale;
+            newHeight = MathHelper.IsZero(newHeight) ? MathHelper.Epsilon : newHeight;
+
+            this.Position = newPosition;
+            this.Normal = newNormal;
+            this.Rotation = newRotation;
+            this.Height = newHeight;
+            this.RectangleWidth *= scale;
+
+        }
 
         /// <summary>
         /// Creates a new MText that is a copy of the current instance.

@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -440,7 +440,22 @@ namespace netDxf.Blocks
         /// </remarks>
         public static Block Load(string file)
         {
-            return Load(file, null);
+            return Load(file, string.Empty, new List<string>());
+        }
+
+        /// <summary>
+        /// Creates a block from an external dxf file.
+        /// </summary>
+        /// <param name="file">Dxf file name.</param>
+        /// <param name="supportFolders">List of the document support folders.</param>
+        /// <returns>The block build from the dxf file content. It will return null if the file has not been able to load.</returns>
+        /// <remarks>
+        /// The name of the block will be the file name without extension, and
+        /// only the entities contained in ModelSpace will make part of the block.
+        /// </remarks>
+        public static Block Load(string file, IEnumerable<string> supportFolders)
+        {
+            return Load(file, string.Empty, supportFolders);
         }
 
         /// <summary>
@@ -452,13 +467,26 @@ namespace netDxf.Blocks
         /// <remarks>Only the entities contained in ModelSpace will make part of the block.</remarks>
         public static Block Load(string file, string name)
         {
+            return Load(file, name, new List<string>());
+        }
+
+        /// <summary>
+        /// Creates a block from an external dxf file.
+        /// </summary>
+        /// <param name="file">Dxf file name.</param>
+        /// <param name="name">Name of the new block.</param>
+        /// <param name="supportFolders">List of the document support folders.</param>
+        /// <returns>The block build from the dxf file content. It will return null if the file has not been able to load.</returns>
+        /// <remarks>Only the entities contained in ModelSpace will make part of the block.</remarks>
+        public static Block Load(string file, string name, IEnumerable<string> supportFolders)
+        {
 #if DEBUG
-            DxfDocument dwg = DxfDocument.Load(file);
+            DxfDocument dwg = DxfDocument.Load(file, supportFolders);
 #else
             DxfDocument dwg;
             try 
             {
-                dwg = DxfDocument.Load(file);
+                dwg = DxfDocument.Load(file, supportFolders);
             }
             catch
             {
@@ -606,18 +634,10 @@ namespace netDxf.Blocks
             // null items, entities already owned by another Block, attribute definitions and attributes are not allowed in the entities list.
             if (e.Item == null)
                 e.Cancel = true;
-            else if (this.entities.Contains(e.Item))
-                e.Cancel = true;
             else if (this.Flags.HasFlag(BlockTypeFlags.ExternallyDependent))
                 e.Cancel = true;
             else if (e.Item.Owner != null)
-            {
-                // if the block does not belong to a document, all entities which owner is not null will be rejected
-                if (this.Record.Owner == null)
-                    e.Cancel = true;
-                // if the block belongs to a document, the entity will be added to the block only if both, the block and the entity document, are the same
-                // this is handled by the BlocksRecordCollection
-            }
+                e.Cancel = true;
             else
                 e.Cancel = false;
         }
@@ -641,7 +661,12 @@ namespace netDxf.Blocks
                         this.entities.Add(entity);
                 }
             }
-
+            else if (e.Item.Type == EntityType.Viewport)
+            {
+                Viewport viewport = (Viewport) e.Item;
+                if (viewport.ClippingBoundary != null)
+                    this.entities.Add(viewport.ClippingBoundary);
+            }
             this.OnEntityAddedEvent(e.Item);
             e.Item.Owner = this;
         }
@@ -677,13 +702,7 @@ namespace netDxf.Blocks
             else if (this.attributes.ContainsTag(e.Item.Tag))
                 e.Cancel = true;
             else if (e.Item.Owner != null)
-            {
-                // if the block does not belong to a document, all attribute definitions which owner is not null will be rejected
-                if (this.Record.Owner == null)
-                    e.Cancel = true;
-                // if the block belongs to a document, the entity will be added to the block only if both, the block and the attribute definitions document, are the same
-                // this is handled by the BlocksRecordCollection
-            }
+                e.Cancel = true;
             else
                 e.Cancel = false;
         }

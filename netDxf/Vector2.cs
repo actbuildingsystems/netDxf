@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -247,11 +247,11 @@ namespace netDxf
                 return u;
             double sin = Math.Sin(angle);
             double cos = Math.Cos(angle);
-            return new Vector2(u.X*cos - u.Y*sin, u.X*sin + u.Y*cos) {isNormalized = u.IsNormalized};
+            return new Vector2(u.X * cos - u.Y * sin, u.X * sin + u.Y * cos) { isNormalized = u.IsNormalized };
         }
 
         /// <summary>
-        /// Obtains a the polar point of another point. 
+        /// Obtains the polar point of another point. 
         /// </summary>
         /// <param name="u">Reference point.</param>
         /// <param name="distance">Distance from point u.</param>
@@ -264,17 +264,6 @@ namespace netDxf
         }
 
         /// <summary>
-        /// Obtains the distance between two points.
-        /// </summary>
-        /// <param name="u">Vector2.</param>
-        /// <param name="v">Vector2.</param>
-        /// <returns>Distance.</returns>
-        public static double Distance(Vector2 u, Vector2 v)
-        {
-            return Math.Sqrt((u.X - v.X)*(u.X - v.X) + (u.Y - v.Y)*(u.Y - v.Y));
-        }
-
-        /// <summary>
         /// Obtains the square distance between two points.
         /// </summary>
         /// <param name="u">Vector2.</param>
@@ -283,6 +272,17 @@ namespace netDxf
         public static double SquareDistance(Vector2 u, Vector2 v)
         {
             return (u.X - v.X)*(u.X - v.X) + (u.Y - v.Y)*(u.Y - v.Y);
+        }
+
+        /// <summary>
+        /// Obtains the distance between two points.
+        /// </summary>
+        /// <param name="u">Vector2.</param>
+        /// <param name="v">Vector2.</param>
+        /// <returns>Distance.</returns>
+        public static double Distance(Vector2 u, Vector2 v)
+        {
+            return Math.Sqrt(SquareDistance(u, v));
         }
 
         /// <summary>
@@ -568,28 +568,6 @@ namespace netDxf
         }
 
         /// <summary>
-        /// Divides a scalar with a vector.
-        /// </summary>
-        /// <param name="a">Scalar.</param>
-        /// <param name="u">Vector2.</param>
-        /// <returns>The division of u times a.</returns>
-        public static Vector2 operator /(double a, Vector2 u)
-        {
-            return new Vector2(a* u.X, a* u.Y);
-        }
-
-        /// <summary>
-        /// Divides a scalar with a vector.
-        /// </summary>
-        /// <param name="a">Scalar.</param>
-        /// <param name="u">Vector2.</param>
-        /// <returns>The division of u times a.</returns>
-        public static Vector2 Divide(double a, Vector2 u)
-        {
-            return new Vector2(a * u.X, a * u.Y);
-        }
-
-        /// <summary>
         /// Divides a vector with an scalar.
         /// </summary>
         /// <param name="u">Vector2.</param>
@@ -664,6 +642,8 @@ namespace netDxf
         /// <returns>Vector modulus.</returns>
         public double Modulus()
         {
+            if (this.isNormalized) return 1.0;
+
             return Math.Sqrt(DotProduct(this, this));
         }
 

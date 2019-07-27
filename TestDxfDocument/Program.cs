@@ -30,6 +30,24 @@ namespace TestDxfDocument
         {
             DxfDocument doc = Test(@"sample.dxf");
 
+            #region Samples for new and modified features 2.3.0
+
+            //ExplodeInsert();
+            //TransformArc();
+            //TransformCircle();
+            //TransformLwPolyline();
+            //TransformEllipse();
+            //AddHeaderVariable();
+            //ViewportTransform();
+            //MLineMirrorAndExplode();
+            //ShapeMirror();
+            //TextMirror();
+            //MTextMirror();
+            //InsertMirror();
+            //LeaderMirror();
+
+            #endregion
+
             #region Samples for new and modified features 2.2.1
 
             //MTextParagraphFormatting();
@@ -229,6 +247,431 @@ namespace TestDxfDocument
             #endregion
         }
 
+        #region Samples for new and modified features 2.3.0
+
+        public static void ExplodeInsert()
+        {
+            // create a block with all the drawing objects in the ModelSpace of the sample.dxf file
+            Block block = Block.Load("sample.dxf", new List<string> {@".\Support"});
+            // create an Insert from that block
+            Insert insert = new Insert(block);
+
+            // some transformation
+            insert.Position = new Vector3(500, 250, 0);
+            insert.Scale = new Vector3(2);
+            insert.Rotation = 30;
+            insert.Normal = new Vector3(0, -1, 0);
+
+            // the above transformation also can be achieve using the TransformBy method
+            // keep in mind that the transformation uses the column major convention.
+            //insert.TransformBy(Matrix3.RotationX(MathHelper.HalfPI) * Matrix3.RotationZ(30 * MathHelper.DegToRad) * Matrix3.Scale(2), new Vector3(500,250,0));
+            // using row major convention is equivalent to (A*B)t = At*Bt, where t means transpose
+            //insert.TransformBy((Matrix3.Scale(2).Transpose() * Matrix3.RotationZ(30 * MathHelper.DegToRad).Transpose() * Matrix3.RotationX(MathHelper.HalfPI).Transpose()).Transpose(), new Vector3(500,250,0));
+
+            // explode the block, this will decompose the insert and apply the insert transformation
+            List<EntityObject> explode = insert.Explode();
+            // create a document
+            DxfDocument doc = new DxfDocument(DxfVersion.AutoCad2010, new List<string> {@".\Support"});
+            // add the insert to the document as reference
+            doc.AddEntity(insert);
+            // add the entities from the exploded insert
+            doc.AddEntity(explode);
+            // save
+            doc.Save("test.dxf");
+
+            DxfDocument loaded = DxfDocument.Load("test.dxf", new List<string> {@".\Support"});
+            loaded.Save("test compare.dxf");
+        }
+
+        public static void TransformArc()
+        {
+            Arc arc = new Arc {Center = new Vector3(0,0,10), Radius = 2, StartAngle = 30, EndAngle = 160};
+            Block block = new Block("MyBlock");
+            block.Entities.Add(arc);
+
+            Insert insert = new Insert(block);
+            //insert.Position = new Vector3(12,22,4);
+            //insert.Scale = new Vector3(-1.25,0.75,1);
+            insert.Scale = new Vector3(1,1,2);
+            //insert.Rotation = 30;
+            //insert.Normal = new Vector3(1,1,1);
+
+            Arc circle2 = (Arc) arc.Clone();
+            circle2.Color = AciColor.Blue;
+            circle2.TransformBy(Matrix3.Scale(4,4,0), Vector3.Zero);
+
+            DxfDocument doc = new DxfDocument();
+            doc.AddEntity(insert);
+            List<EntityObject> entities = insert.Explode();
+            doc.AddEntity(entities);
+            doc.AddEntity(circle2);
+            doc.Save("test.dxf");
+        }
+
+        public static void TransformCircle()
+        {
+            Circle circle = new Circle {Center = new Vector3(0,0,10), Radius = 2};
+            Block block = new Block("MyBlock");
+            block.Entities.Add(circle);
+
+            Insert insert = new Insert(block);
+            //insert.Position = new Vector3(12,22,4);
+            //insert.Scale = new Vector3(-1.25,0.75,1);
+            insert.Scale = new Vector3(1,1,2);
+            //insert.Rotation = 30;
+            //insert.Normal = new Vector3(1,1,1);
+
+            Circle circle2 = (Circle) circle.Clone();
+            circle2.Color = AciColor.Blue;
+            circle2.TransformBy(Matrix3.Scale(4,4,0), Vector3.Zero);
+
+            DxfDocument doc = new DxfDocument();
+            doc.AddEntity(insert);
+            List<EntityObject> entities = insert.Explode();
+            doc.AddEntity(entities);
+            doc.AddEntity(circle2);
+            doc.Save("test.dxf");
+        }
+
+        public static void TransformLwPolyline()
+        {
+            double bulge = -Math.Tan(Math.PI / 8);
+            LwPolylineVertex p1 = new LwPolylineVertex(-100, 75, bulge);
+            LwPolylineVertex p2 = new LwPolylineVertex(-75, 100, 0);
+            LwPolylineVertex p3 = new LwPolylineVertex(75, 100, bulge);
+            LwPolylineVertex p4 = new LwPolylineVertex(100, 75, 0);
+            LwPolylineVertex p5 = new LwPolylineVertex(100, -75, bulge);
+            LwPolylineVertex p6 = new LwPolylineVertex(75, -100, 0);
+            LwPolylineVertex p7 = new LwPolylineVertex(-75, -100, bulge);
+            LwPolylineVertex p8 = new LwPolylineVertex(-100, -75, 0);
+
+            LwPolyline poly = new LwPolyline(new[] {p1,p2,p3,p4,p5,p6,p7,p8}, true);
+            //poly.Normal = Vector3.UnitX;
+            poly.TransformBy(Matrix3.RotationZ(30*MathHelper.DegToRad), Vector3.Zero);
+
+            Block block = new Block("MyBlock");
+            block.Entities.Add(poly);
+
+            Insert insert = new Insert(block);
+            //insert.Position = new Vector3(12,22,4);
+            //insert.Scale = new Vector3(1.25,0.75,1);
+            insert.Scale = new Vector3(1,2,3);
+            insert.Rotation = 30;
+            //insert.Normal = new Vector3(1,1,1);
+
+
+            DxfDocument doc = new DxfDocument();
+            //doc.AddEntity(poly);
+            doc.AddEntity(insert);
+            List<EntityObject> entities = insert.Explode();
+            doc.AddEntity(entities);
+            doc.Save("test.dxf");
+
+        }
+
+        public static void TransformEllipse()
+        {
+            Ellipse ellipse = new Ellipse {Center = Vector3.Zero, MajorAxis = 2, MinorAxis = 1, StartAngle = 350, EndAngle = 80, Rotation = 30};
+            //Ellipse ellipse = new Ellipse {Center = new Vector3( 0.616, 0.933, 0.0), MajorAxis = 2, MinorAxis = 1, StartAngle = 30, EndAngle = 160, Rotation = 30};
+            Block block = new Block("MyBlock");
+            block.Entities.Add(ellipse);
+
+            Insert insert = new Insert(block);
+            //insert.Position = new Vector3(12,22,4);
+            //insert.Scale = new Vector3(-1.25,0.75,1);
+            insert.Scale = new Vector3(1,-1,2);
+            insert.Rotation = 30;
+            //insert.Normal = new Vector3(1,1,1);
+           
+            DxfDocument doc = new DxfDocument();
+            doc.AddEntity(insert);
+            List<EntityObject> entities = insert.Explode();
+            doc.AddEntity(entities);
+            doc.Save("test.dxf");
+
+        }
+
+        public static void AddHeaderVariable()
+        {
+            //DxfDocument doc = DxfDocument.Load(@"sample.dxf");
+
+            DxfDocument doc = new DxfDocument();
+
+            HeaderVariable headerVariable;      
+
+            // The ExtMin and ExtMax header variables cannot be directly accessed, now they will be added as custom header variables if the DXF has them
+            // they have been deleted since netDxf does not calculate them
+            Vector3 extMin;
+            if (doc.DrawingVariables.TryGetCustomVariable("$EXTMIN", out headerVariable))
+            {
+                extMin = (Vector3) headerVariable.Value;
+            }
+            Vector3 extMax;
+            if (doc.DrawingVariables.TryGetCustomVariable("$EXTMAX", out headerVariable))
+            {
+                extMax = (Vector3) headerVariable.Value;
+            }
+
+            // you can try to get a header variable and modify it or create a new one if it does not exists
+            if (doc.DrawingVariables.TryGetCustomVariable("$SPLINESEGS", out headerVariable))
+            {
+                headerVariable.Value = (short) 5; // make sure you pass the correct value type, the code group 70 corresponds to a short
+            }
+            else
+            {
+                doc.DrawingVariables.AddCustomVariable(new HeaderVariable("$SPLINESEGS", 70, (short) 5));
+            }            
+
+            // or you can remove a header variable, even if it does not exist and add a new one
+            doc.DrawingVariables.RemoveCustomVariable("$MEASUREMENT");
+            doc.DrawingVariables.AddCustomVariable(new HeaderVariable("$MEASUREMENT", 70, (short) 0));
+
+            doc.Save("test.dxf");
+        }
+
+        public static void MTextMirror()
+        {
+            MText text1 = new MText(new Vector2(50,20), 10);
+            text1.Write("Sample text");
+            text1.EndParagraph();
+            text1.Write("Sample text");
+
+            //text1.IsBackward = true;
+            //text1.Rotation = 30;
+            //text1.ObliqueAngle = 10;
+
+            MText text2 = (MText)text1.Clone();
+            text2.Color = AciColor.Yellow;
+
+            //Matrix3 trans = Matrix3.Identity;
+            //trans[0, 0] = -1;
+            //text2.TransformBy(trans, Vector3.Zero);
+
+            //Matrix3 trans = Matrix3.RotationZ(210 * MathHelper.DegToRad);
+            //text2.TransformBy(trans, Vector3.Zero);
+
+
+            DxfDocument doc = new DxfDocument();
+            doc.DrawingVariables.MirrText = true;
+            doc.AddEntity(text1);
+            doc.AddEntity(text2);
+
+            Matrix3 trans = Matrix3.Identity;
+            trans[0, 0] = -1;
+            //trans = Matrix3.RotationZ(30 * MathHelper.DegToRad) * trans;
+
+            text2.TransformBy(trans, Vector3.Zero);
+
+            doc.Save("test.dxf");
+        }
+
+        public static void TextMirror()
+        {
+            netDxf.Entities.Text.DefaultMirrText = true;
+
+            Text text1 = new Text("Sample text", new Vector2(30,10), 10);
+            text1.Alignment = TextAlignment.BaselineLeft;
+            text1.Width = 200;
+
+            //text1.IsBackward = true;
+            //text1.Rotation = 30;
+            text1.ObliqueAngle = 10;
+
+            Text text2 = (Text)text1.Clone();
+            text2.Color = AciColor.Yellow;
+            Matrix3 trans = Matrix3.Identity;
+            trans[1, 1] = -1;
+            text2.TransformBy(trans, Vector3.Zero);
+
+            //Matrix3 trans = Matrix3.RotationZ(210 * MathHelper.DegToRad);
+            //Text text2 = (Text)text1.Clone();
+            //text2.TransformBy(trans, Vector3.Zero);
+
+            DxfDocument doc = new DxfDocument();
+            //doc.DrawingVariables.MirrText = true;
+
+            doc.AddEntity(text1);
+            doc.AddEntity(text2);
+
+
+            doc.Save("test.dxf");
+
+            DxfDocument dxf = DxfDocument.Load("test.dxf");
+        }
+
+        public static void ShapeMirror()
+        {
+            ShapeStyle style = new ShapeStyle("shape.shx");
+            Shape shape1 = new Shape("MyShape", style);
+            shape1.ObliqueAngle = 20;
+
+            Matrix3 trans = Matrix3.Identity;
+            //trans[0, 0] = -1;
+            trans[1, 1] = -1;
+            Shape shape2 = (Shape)shape1.Clone();
+            shape2.Color = AciColor.Yellow;
+            shape2.TransformBy(trans, Vector3.Zero);
+
+            DxfDocument doc = new DxfDocument();
+            doc.SupportFolders.Add(@".\Support");
+            doc.AddEntity(shape1);
+            doc.AddEntity(shape2);
+            doc.Save("test.dxf");
+
+        }
+
+        public static void MLineMirrorAndExplode()
+        {
+            MLineStyle style = new MLineStyle("MyStyle", "Personalized style.");
+            style.Elements[0].Color = AciColor.Cyan;
+            style.Elements[1].Color = AciColor.Yellow;
+            style.Elements.Add(new MLineStyleElement(0.25) { Color = AciColor.Blue });
+            style.Elements.Add(new MLineStyleElement(0.15) { Color = AciColor.Blue });
+            style.Elements.Add(new MLineStyleElement(0.0) { Color = AciColor.Red });
+            style.Elements.Add(new MLineStyleElement(-0.15) { Color = AciColor.Green });
+            style.Elements.Add(new MLineStyleElement(-0.25) { Color = AciColor.Green });
+
+            style.Elements.Sort();
+            style.Flags = MLineStyleFlags.EndInnerArcsCap |
+                          MLineStyleFlags.EndRoundCap |
+                          MLineStyleFlags.StartInnerArcsCap |
+                          MLineStyleFlags.StartRoundCap |
+                          MLineStyleFlags.StartSquareCap |
+                          MLineStyleFlags.EndSquareCap |
+                          MLineStyleFlags.DisplayJoints;
+
+            //style.StartAngle = 120;
+            //style.EndAngle = 30;
+            List<Vector2> vertexes = new List<Vector2>
+            {
+                new Vector2(50, 0),
+                new Vector2(50, 150),
+                new Vector2(200, 150),
+                new Vector2(300, 250)
+            };
+
+            MLine mline1 = new MLine(vertexes, style, 20);
+            //mline.NoStartCaps = true;
+            //mline.Normal = new Vector3(1);
+            mline1.Layer = new Layer("Layer1") { Color = AciColor.Blue };
+            mline1.Justification = MLineJustification.Bottom;
+            mline1.Update();
+
+            MLine mline2 = (MLine)mline1.Clone();
+            //mline2.Color = AciColor.Yellow;
+
+            //Matrix3 trans = Matrix3.RotationZ(Math.PI);
+            //Matrix3 trans = Matrix3.Identity;
+            //trans[0, 0] = -1;
+            ////trans[1, 1] = -1;
+
+            Matrix3 trans = Matrix3.RotationX(MathHelper.HalfPI);
+            mline2.TransformBy(trans, Vector3.Zero);
+
+            DxfDocument doc = new DxfDocument(DxfVersion.AutoCad2010);
+            doc.DrawingVariables.LtScale = 10;
+
+            doc.AddEntity(mline1);
+            doc.AddEntity(mline2);
+            //List<EntityObject> entities = mline2.Explode();
+            //doc.AddEntity(entities);
+
+            doc.Save("test.dxf");
+        }
+
+        public static void InsertMirror()
+        {
+            DxfDocument doc = DxfDocument.Load("BlockSample.dxf");
+            doc.DrawingVariables.MirrText = true;
+            Insert insert = doc.Inserts.ElementAt(0);
+
+            Insert copy = (Insert) insert.Clone();
+            Matrix3 trans = Matrix3.Identity;
+            trans[1, 1] = -1;
+            copy.TransformBy(trans, Vector3.Zero);
+            //doc.AddEntity(copy);
+            doc.AddEntity(copy.Explode());
+            doc.Save("test.dxf");
+
+        }
+
+        public static void LeaderMirror()
+        {
+            // a text annotation with style
+            DimensionStyle style = new DimensionStyle("MyStyle");
+            style.DimLineColor = AciColor.Green;
+            style.TextColor = AciColor.Blue;
+            //style.LeaderArrow = DimensionArrowhead.DotBlank;
+            style.DimScaleOverall = 2.0;
+
+            // a basic text annotation
+            List<Vector2> vertexes1 = new List<Vector2>();
+            vertexes1.Add(new Vector2(0, 0));
+            vertexes1.Add(new Vector2(7, 7));
+            //Leader leader1 = new Leader("Sample annotation", vertexes1, style);
+
+
+            Leader leader1 = new Leader(vertexes1, style);
+            leader1.Annotation = new MText("Sample annotation");
+            //leader1.Annotation = new Text("Sample annotation", style.TextHeight);
+
+            //// a tolerance annotation
+            //List<Vector2> vertexes3 = new List<Vector2>();
+            //vertexes3.Add(new Vector2(0));
+            //vertexes3.Add(new Vector2(5, 5));
+            //vertexes3.Add(new Vector2(7.5, 5));
+            //ToleranceEntry entry = new ToleranceEntry
+            //{
+            //    GeometricSymbol = ToleranceGeometricSymbol.Symmetry,
+            //    Tolerance1 = new ToleranceValue(true, "12.5", ToleranceMaterialCondition.Maximum)
+            //};
+            //Leader leader1 = new Leader(entry, vertexes3);
+            //((Tolerance) leader1.Annotation).TextHeight = 0.35;
+
+            // a block annotation
+            Block block = new Block("BlockAnnotation");
+            block.Entities.Add(new Line(new Vector2(-1, -1), new Vector2(1, 1)));
+            block.Entities.Add(new Line(new Vector2(-1, 1), new Vector2(1, -1)));
+            block.Entities.Add(new Circle(Vector2.Zero, 0.5));
+
+            Insert ins = new Insert(block);
+
+            //List<Vector2> vertexes4 = new List<Vector2>();
+            //vertexes4.Add(new Vector2(0));
+            //vertexes4.Add(new Vector2(-5, -5));
+            //vertexes4.Add(new Vector2(-7.5, -5));
+            //Leader leader1 = new Leader(block, vertexes4);
+
+            // add entities to the document
+            DxfDocument doc = new DxfDocument();
+            //doc.AddEntity((EntityObject) leader1.Clone());
+            doc.AddEntity(leader1);
+
+
+            Leader leader2 = (Leader)leader1.Clone();
+            //Matrix3 trans = Matrix3.Scale(2);
+            Matrix3 trans = Matrix3.Identity;
+            trans[1, 1] *= -1;
+            //Matrix3 trans = Matrix3.RotationZ(210 * MathHelper.DegToRad);
+            leader2.TransformBy(trans, Vector3.Zero);
+            //leader2.TransformBy(trans, new Vector3(0, -10, 0));
+            doc.AddEntity(leader2);
+
+
+            //leader1.Annotation = ins;
+
+            //leader2.Annotation = null;
+
+            doc.RemoveEntity(leader1);
+
+            doc.Save("test.dxf");
+
+            //DxfDocument dxf = DxfDocument.Load("test.dxf");
+            //dxf.Save("test.dxf");
+        }
+
+        #endregion
+
         #region Samples for new and modified features 2.2.1
 
         private static void MTextParagraphFormatting()
@@ -426,7 +869,7 @@ namespace TestDxfDocument
             EntityCollection entities2 = loaded.Blocks[Block.DefaultModelSpaceName].Entities;
 
             // getting the layout references not only include the entities of the associated block but also its attribute definitions
-            IList<DxfObject> entities3 = loaded.Layouts.GetReferences(Layout.ModelSpaceName);
+            List<DxfObject> entities3 = loaded.Layouts.GetReferences(Layout.ModelSpaceName);
 
             // this will iterate through the lines we previously added to the doc DxfDocument (using Linq)
             foreach (Line line in entities1.OfType<Line>())
@@ -1564,9 +2007,9 @@ namespace TestDxfDocument
             doc.AddEntity(dimY1);
             doc.AddEntity(dim5);
             doc.AddEntity(dim6);
-            doc.Save("test1.dxf");
+            doc.Save("test.dxf");
 
-            doc = DxfDocument.Load("test1.dxf");
+            doc = DxfDocument.Load("test.dxf");
             foreach (Dimension d in doc.Dimensions)
             {
                 d.Update();
@@ -1575,7 +2018,7 @@ namespace TestDxfDocument
             doc.AddEntity((EntityObject) dimY1.Clone());
             doc.AddEntity((EntityObject) dim5.Clone());
             doc.AddEntity((EntityObject) dim6.Clone());
-            doc.Save("test2.dxf");
+            doc.Save("test.dxf");
         }
 
         private static void AlignedDimensionTest()
@@ -1650,7 +2093,7 @@ namespace TestDxfDocument
             dxf.AddEntity(dim2);
             dxf.AddEntity(dim3);
             dxf.AddEntity(dim4);
-            dxf.Save("test1.dxf");
+            dxf.Save("test.dxf");
 
             //dxf = DxfDocument.Load("test1.dxf");
             //foreach (var d in dxf.Dimensions)
@@ -1993,12 +2436,12 @@ namespace TestDxfDocument
             Underlay underlay1 = new Underlay(underlayDef1);
             underlay1.Normal = new Vector3(1, 0, 0);
             underlay1.Position = new Vector3(0, 1, 0);
-            underlay1.Scale = new Vector3(0.001);
+            underlay1.Scale = new Vector2(0.001);
 
             UnderlayDwfDefinition underlayDef2 = new UnderlayDwfDefinition("DwfUnderlay.dwf");
             Underlay underlay2 = new Underlay(underlayDef2);
             underlay2.Rotation = 45;
-            underlay2.Scale = new Vector3(0.01);
+            underlay2.Scale = new Vector2(0.01);
 
             UnderlayPdfDefinition underlayDef3 = new UnderlayPdfDefinition("PdfUnderlay.pdf");
             underlayDef3.Page = "3";
@@ -2280,8 +2723,9 @@ namespace TestDxfDocument
             // this is incorrect we cannot add an entity that belongs to a document when the block does not belong to anyone.
             //block.Entities.Add(existingLine);
             doc.Blocks.Add(block);
-            // when the block and the entity that is being added belong to the same document, the entity will be removed from its current layout and added to the block
-            // you cannot add an entity that belongs to a different document or block. Clone it instead.
+            // you cannot add an entity that belongs to a different document or block. Clone it instead or removed first from its previous owner.
+
+            existingLine.Owner.Entities.Remove(existingLine);
             block.Entities.Add(existingLine);
 
             // now we can modify the block properties even if it has been already added to the document
@@ -2684,6 +3128,7 @@ namespace TestDxfDocument
         private static void LinearDimension()
         {
             DxfDocument dxf = new DxfDocument(DxfVersion.AutoCad2010);
+
             DimensionStyle myStyle = CreateDimStyle();
 
             Vector3 p1 = new Vector3(0, -5, 0);
@@ -4136,7 +4581,7 @@ namespace TestDxfDocument
             Console.WriteLine("\t{0}; count: {1}", EntityType.Image, dxf.Images.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Insert, dxf.Inserts.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Leader, dxf.Leaders.Count());
-            Console.WriteLine("\t{0}; count: {1}", EntityType.LightWeightPolyline, dxf.LwPolylines.Count());
+            Console.WriteLine("\t{0}; count: {1}", EntityType.LwPolyline, dxf.LwPolylines.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Line, dxf.Lines.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Mesh, dxf.Meshes.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.MLine, dxf.MLines.Count());
@@ -4234,7 +4679,10 @@ namespace TestDxfDocument
                 return null;
             }
 
+            Stopwatch watch = new Stopwatch();
+            watch.Start();
             DxfDocument dxf = DxfDocument.Load(file, new List<string> {@".\Support"});
+            watch.Stop();
 
             // check if there has been any problems loading the file,
             // this might be the case of a corrupt file or a problem in the library
@@ -4261,7 +4709,8 @@ namespace TestDxfDocument
 
             // the dxf has been properly loaded, let's show some information about it
             Console.WriteLine("FILE NAME: {0}", file);
-            Console.WriteLine("\tbinary dxf: {0}", isBinary);
+            Console.WriteLine("\tbinary DXF: {0}", isBinary);
+            Console.WriteLine("\tloading time: {0} seconds", watch.ElapsedMilliseconds / 1000.0);
             Console.WriteLine();
             Console.WriteLine("FILE VERSION: {0}", dxf.DrawingVariables.AcadVer);
             Console.WriteLine();
@@ -4575,7 +5024,7 @@ namespace TestDxfDocument
                     }
                 }
             }
-            Console.WriteLine("\t{0}; count: {1}", EntityType.LightWeightPolyline, dxf.LwPolylines.Count());
+            Console.WriteLine("\t{0}; count: {1}", EntityType.LwPolyline, dxf.LwPolylines.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Line, dxf.Lines.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.Mesh, dxf.Meshes.Count());
             Console.WriteLine("\t{0}; count: {1}", EntityType.MLine, dxf.MLines.Count());
@@ -4597,22 +5046,68 @@ namespace TestDxfDocument
             // the dxf version is controlled by the DrawingVariables property of the dxf document,
             // also a HeaderVariables instance or a DxfVersion can be passed to the constructor to initialize a new DxfDocument.
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2018;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2018.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2018 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2013;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2013.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2013 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2010;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2010.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2010 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2007;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2007.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2007 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2004;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2004.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2004 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
             dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2000;
+            watch.Reset();
+            watch.Start();
             dxf.Save("sample 2000.dxf");
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("DXF version AutoCad2000 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
 
             // saving to binary dxf
-            dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2013;
+            dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2010;
+            watch.Reset();
+            watch.Start();
             dxf.Save("binary test.dxf", true);
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("Binary DXF version AutoCad2010 saved in {0} seconds", watch.ElapsedMilliseconds/1000.0);
+
+            watch.Reset();
+            watch.Start();
             DxfDocument test = DxfDocument.Load("binary test.dxf", new List<string> { @".\Support" });
+            watch.Stop();
+            Console.WriteLine();
+            Console.WriteLine("Binary DXF version AutoCad2010 loaded in {0} seconds", watch.ElapsedMilliseconds/1000.0);
 
             if (outputLog)
             {
@@ -4621,27 +5116,12 @@ namespace TestDxfDocument
             }
             else
             {
+                Console.WriteLine();
                 Console.WriteLine("Press a key to continue...");
                 Console.ReadLine();
             }
             return dxf;
         }
-
-        //private static void ExplodeInsert()
-        //{
-        //    DxfDocument dxf = DxfDocument.Load("explode\\ExplodeInsertUniformScale.dxf");
-
-        //    List<DxfObject> refs = dxf.Blocks.References["ExplodeBlock"];
-        //    Insert insert = (Insert)refs[0];
-        //    dxf.RemoveEntity(insert);
-        //    insert.Layer = new Layer("Original block");
-        //    insert.Layer.Color = AciColor.DarkGrey;
-        //    dxf.AddEntity(insert);
-        //    List<Entity> explodedEntities = insert.Explode();
-        //    dxf.AddEntity(explodedEntities);
-
-        //    dxf.Save("ExplodeInsert.dxf");
-        //}
 
         public static void ImageAndClipBoundary()
         {
@@ -5459,7 +5939,7 @@ namespace TestDxfDocument
             Vector3 v1OCS = new Vector3(v1.Position.X, v1.Position.Y, lwp.Elevation);
             Vector3 v2OCS = new Vector3(v2.Position.X, v2.Position.Y, lwp.Elevation);
             Vector3 v3OCS = new Vector3(v3.Position.X, v3.Position.Y, lwp.Elevation);
-            IList<Vector3> vertexesWCS = MathHelper.Transform(new List<Vector3> {v1OCS, v2OCS, v3OCS}, lwp.Normal, CoordinateSystem.Object, CoordinateSystem.World);
+            List<Vector3> vertexesWCS = MathHelper.Transform(new List<Vector3> {v1OCS, v2OCS, v3OCS}, lwp.Normal, CoordinateSystem.Object, CoordinateSystem.World);
         }
 
         private static void WriteGradientPattern()
@@ -6541,7 +7021,7 @@ namespace TestDxfDocument
             poly.Vertexes.Add(new LwPolylineVertex(10, 10));
             poly.Vertexes.Add(new LwPolylineVertex(-10, 10));
             poly.Vertexes[2].Bulge = 1;
-            poly.IsClosed = true;
+            //poly.IsClosed = true;
 
             LwPolyline poly2 = new LwPolyline();
             poly2.Vertexes.Add(new LwPolylineVertex(-5, -5));
@@ -6558,28 +7038,30 @@ namespace TestDxfDocument
             poly3.Vertexes.Add(new LwPolylineVertex(-8, -6));
             poly3.IsClosed = true;
 
-            Line line = new Line(new Vector2(-5, -5), new Vector2(5, -5));
+            Line line = new Line(new Vector2(-10, -10), new Vector2(-10, 10));
             List<HatchBoundaryPath> boundary = new List<HatchBoundaryPath>
             {
                 new HatchBoundaryPath(new List<EntityObject> {line, poly}),
-                new HatchBoundaryPath(new List<EntityObject> {poly2}),
-                new HatchBoundaryPath(new List<EntityObject> {poly3}),
+                //new HatchBoundaryPath(new List<EntityObject> {poly2}),
+                //new HatchBoundaryPath(new List<EntityObject> {poly3}),
             };
+
             Hatch hatch = new Hatch(HatchPattern.Net, boundary, true);
+            //Hatch hatch = new Hatch(HatchPattern.Line, boundary, true);
             hatch.Layer = new Layer("hatch")
             {
                 Color = AciColor.Red,
                 Linetype = Linetype.Continuous
             };
             hatch.Pattern.Angle = 30;
-            hatch.Elevation = 52;
-            hatch.Normal = new Vector3(1, 1, 0);
+            //hatch.Elevation = 52;
+            //hatch.Normal = new Vector3(1, 1, 0);
             hatch.Pattern.Scale = 1/hatch.Pattern.LineDefinitions[0].Delta.Y;
-            //dxf.AddEntity(poly);
-            //dxf.AddEntity(poly2);
-            //dxf.AddEntity(poly3);
             dxf.AddEntity(hatch);
-            dxf.AddEntity(hatch.CreateBoundary(true));
+            List<EntityObject> entities = hatch.CreateBoundary(true);
+
+            // if the hatch is associative DO NOT add the entities that make the contourn to the document it will be done automatically
+            //dxf.AddEntity(entities);
 
             dxf.Save("hatchTest1.dxf");
             dxf = DxfDocument.Load("hatchTest1.dxf");
@@ -6806,8 +7288,8 @@ namespace TestDxfDocument
             string layerName = "MyLayer";
             float totalTime = 0;
 
-            //List<EntityObject> lines = new List<EntityObject>(numLines);
-            List<EntityObject> pols = new List<EntityObject>(numLines);
+            List<EntityObject> lines = new List<EntityObject>(numLines);
+            //List<EntityObject> pols = new List<EntityObject>(numLines);
             DxfDocument dxf = new DxfDocument();
 
             crono.Start();
@@ -6831,30 +7313,29 @@ namespace TestDxfDocument
                 //pol.Layer.Color.Index = 6;
                 //pols.Add(pol);
 
-                List<Vector3> vertexes = new List<Vector3>()
-                {
-                    new Vector3(0,0,0),
-                    new Vector3(10,0,10),
-                    new Vector3(10,10,20),
-                    new Vector3(0,10,30),
-                    new Vector3(0,20,40),
-                    new Vector3(10,20,50),
-                    new Vector3(10,30,60),
-                    new Vector3(10,40,70),
-                    new Vector3(0,40,80),
-                    new Vector3(0,50,90)
-                };
-                Polyline pol = new Polyline(vertexes);
-                pol.Layer = new Layer(layerName);
-                pol.Layer.Color.Index = 6;
-                pols.Add(pol);
+                //List<Vector3> vertexes = new List<Vector3>()
+                //{
+                //    new Vector3(0,0,0),
+                //    new Vector3(10,0,10),
+                //    new Vector3(10,10,20),
+                //    new Vector3(0,10,30),
+                //    new Vector3(0,20,40),
+                //    new Vector3(10,20,50),
+                //    new Vector3(10,30,60),
+                //    new Vector3(10,40,70),
+                //    new Vector3(0,40,80),
+                //    new Vector3(0,50,90)
+                //};
+                //Polyline pol = new Polyline(vertexes);
+                //pol.Layer = new Layer(layerName);
+                //pol.Layer.Color.Index = 6;
+                //pols.Add(pol);
 
-                //lines.Add(pol);
-                ////line
-                //Line line = new Line(new Vector3(0, i, 0), new Vector3(5, i, 0));
-                //line.Layer = new Layer(layerName);
-                //line.Layer.Color.Index = 6;
-                //lines.Add(line);
+                //line
+                Line line = new Line(new Vector3(0, i, 0), new Vector3(5, i, 0));
+                line.Layer = new Layer(layerName);
+                line.Layer.Color.Index = 6;
+                lines.Add(line);
             }
 
             Console.WriteLine("Time creating entities : " + crono.ElapsedMilliseconds/1000.0f);
@@ -6862,18 +7343,18 @@ namespace TestDxfDocument
             crono.Reset();
 
             crono.Start();
-            //dxf.AddEntity(lines);
-            dxf.AddEntity(pols);
+            dxf.AddEntity(lines);
+            //dxf.AddEntity(pols);
             Console.WriteLine("Time adding entities to document : " + crono.ElapsedMilliseconds/1000.0f);
             totalTime += crono.ElapsedMilliseconds;
             crono.Reset();
 
-            crono.Start();
-            dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2000;
-            dxf.Save("speedtest (netDxf 2000).dxf");
-            Console.WriteLine("Time saving file 2000 : " + crono.ElapsedMilliseconds/1000.0f);
-            totalTime += crono.ElapsedMilliseconds;
-            crono.Reset();
+            //crono.Start();
+            //dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2000;
+            //dxf.Save("speedtest (netDxf 2000).dxf");
+            //Console.WriteLine("Time saving file 2000 : " + crono.ElapsedMilliseconds/1000.0f);
+            //totalTime += crono.ElapsedMilliseconds;
+            //crono.Reset();
 
             //crono.Start();
             //dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2000;
@@ -6882,20 +7363,20 @@ namespace TestDxfDocument
             //totalTime += crono.ElapsedMilliseconds;
             //crono.Reset();
 
-            //crono.Start();
-            //dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2010;
-            //dxf.Save("speedtest (netDxf 2010).dxf");
-            //Console.WriteLine("Time saving file 2010 : " + crono.ElapsedMilliseconds/1000.0f);
-            //totalTime += crono.ElapsedMilliseconds;
-            //crono.Reset();
-
-
             crono.Start();
-            dxf = DxfDocument.Load("speedtest (netDxf 2000).dxf");
-            Console.WriteLine("Time loading file 2000: " + crono.ElapsedMilliseconds/1000.0f);
+            dxf.DrawingVariables.AcadVer = DxfVersion.AutoCad2010;
+            dxf.Save("speedtest (netDxf 2010).dxf");
+            Console.WriteLine("Time saving file 2010 : " + crono.ElapsedMilliseconds / 1000.0f);
             totalTime += crono.ElapsedMilliseconds;
-            crono.Stop();
             crono.Reset();
+
+
+            //crono.Start();
+            //dxf = DxfDocument.Load("speedtest (netDxf 2000).dxf");
+            //Console.WriteLine("Time loading file 2000: " + crono.ElapsedMilliseconds/1000.0f);
+            //totalTime += crono.ElapsedMilliseconds;
+            //crono.Stop();
+            //crono.Reset();
 
             //crono.Start();
             //dxf = DxfDocument.Load("speedtest (binary netDxf 2000).dxf");
@@ -6904,12 +7385,12 @@ namespace TestDxfDocument
             //crono.Stop();
             //crono.Reset();
 
-            //crono.Start();
-            //dxf = DxfDocument.Load("speedtest (netDxf 2010).dxf");
-            //Console.WriteLine("Time loading file 2010: " + crono.ElapsedMilliseconds/1000.0f);
-            //totalTime += crono.ElapsedMilliseconds;
-            //crono.Stop();
-            //crono.Reset();
+            crono.Start();
+            dxf = DxfDocument.Load("speedtest (netDxf 2010).dxf");
+            Console.WriteLine("Time loading file 2010: " + crono.ElapsedMilliseconds / 1000.0f);
+            totalTime += crono.ElapsedMilliseconds;
+            crono.Stop();
+            crono.Reset();
 
             Console.WriteLine("Total time : " + totalTime/1000.0f);
             Console.ReadLine();

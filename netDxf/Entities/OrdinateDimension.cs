@@ -1,7 +1,7 @@
-﻿#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+﻿#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -250,6 +250,53 @@ namespace netDxf.Entities
         #region overrides
 
         /// <summary>
+        /// Moves, scales, and/or rotates the current entity given a 3x3 transformation matrix and a translation vector.
+        /// </summary>
+        /// <param name="transformation">Transformation matrix.</param>
+        /// <param name="translation">Translation vector.</param>
+        /// <remarks>Matrix3 adopts the convention of using column vectors to represent a transformation matrix.</remarks>
+        public override void TransformBy(Matrix3 transformation, Vector3 translation)
+        {
+            Vector3 newNormal = transformation * this.Normal;
+            if (Vector3.Equals(Vector3.Zero, newNormal)) newNormal = this.Normal;
+
+            Matrix3 transOW = MathHelper.ArbitraryAxis(this.Normal);
+            Matrix3 transWO = MathHelper.ArbitraryAxis(newNormal).Transpose();
+
+            Vector3 refAxis = transOW * Vector3.UnitX;
+            refAxis = transformation * refAxis;
+            refAxis = transWO * refAxis;
+            double newRotation = Vector2.Angle(new Vector2(refAxis.X, refAxis.Y)) * MathHelper.RadToDeg;
+
+            Vector3 v = transOW * new Vector3(this.FeaturePoint.X, this.FeaturePoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            Vector2 newStart = new Vector2(v.X, v.Y);
+            double newElevation = v.Z;
+
+            v = transOW * new Vector3(this.LeaderEndPoint.X, this.LeaderEndPoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            Vector2 newEnd = new Vector2(v.X, v.Y);
+
+            v = transOW * new Vector3(this.textRefPoint.X, this.textRefPoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            this.textRefPoint = new Vector2(v.X, v.Y);
+
+            v = transOW * new Vector3(this.defPoint.X, this.defPoint.Y, this.Elevation);
+            v = transformation * v + translation;
+            v = transWO * v;
+            this.defPoint = new Vector2(v.X, v.Y);
+
+            this.Rotation += newRotation;
+            this.FeaturePoint = newStart;
+            this.LeaderEndPoint = newEnd;
+            this.Elevation = newElevation;
+            this.Normal = newNormal;
+        }
+
+        /// <summary>
         /// Calculate the dimension reference points.
         /// </summary>
         protected override void CalculteReferencePoints()
@@ -321,9 +368,8 @@ namespace netDxf.Entities
 
             foreach (DimensionStyleOverride styleOverride in this.StyleOverrides.Values)
             {
-                object copy;
                 ICloneable value = styleOverride.Value as ICloneable;
-                copy = value != null ? value.Clone() : styleOverride.Value;
+                object copy = value != null ? value.Clone() : styleOverride.Value;
 
                 entity.StyleOverrides.Add(new DimensionStyleOverride(styleOverride.Type, copy));
             }

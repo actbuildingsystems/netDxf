@@ -1,7 +1,7 @@
-#region netDxf library, Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+#region netDxf library, Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 
 //                        netDxf library
-// Copyright (C) 2009-2018 Daniel Carvajal (haplokuon@gmail.com)
+// Copyright (C) 2009-2019 Daniel Carvajal (haplokuon@gmail.com)
 // 
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -141,8 +141,8 @@ namespace netDxf
             get { return this.x; }
             set
             {
-                this.isNormalized = false;
                 this.x = value;
+                this.isNormalized = false;
             }
         }
 
@@ -154,8 +154,8 @@ namespace netDxf
             get { return this.y; }
             set
             {
-                this.isNormalized = false;
                 this.y = value;
+                this.isNormalized = false;
             }
         }
 
@@ -167,8 +167,8 @@ namespace netDxf
             get { return this.z; }
             set
             {
-                this.isNormalized = false;
                 this.z = value;
+                this.isNormalized = false;
             }
         }
 
@@ -194,7 +194,6 @@ namespace netDxf
             }
             set
             {
-                this.isNormalized = false;
                 switch (index)
                 {
                     case 0:
@@ -209,6 +208,7 @@ namespace netDxf
                     default:
                         throw new ArgumentOutOfRangeException(nameof(index));
                 }
+                this.isNormalized = false;
             }
         }
 
@@ -267,7 +267,7 @@ namespace netDxf
         /// <returns>Distance.</returns>
         public static double Distance(Vector3 u, Vector3 v)
         {
-            return Math.Sqrt((u.X - v.X)*(u.X - v.X) + (u.Y - v.Y)*(u.Y - v.Y) + (u.Z - v.Z)*(u.Z - v.Z));
+            return Math.Sqrt(SquareDistance(u, v));
         }
 
         /// <summary>
@@ -540,34 +540,12 @@ namespace netDxf
         /// <summary>
         /// Multiplies two vectors component by component.
         /// </summary>
-        /// <param name="u">Vector2.</param>
-        /// <param name="v">Vector2.</param>
+        /// <param name="u">Vector3.</param>
+        /// <param name="v">Vector3.</param>
         /// <returns>The multiplication of u times v.</returns>
         public static Vector3 Multiply(Vector3 u, Vector3 v)
         {
             return new Vector3(u.X * v.X, u.Y * v.Y, u.Z * v.Z);
-        }
-
-        /// <summary>
-        /// Divides a vector with an scalar.
-        /// </summary>
-        /// <param name="u">Vector3.</param>
-        /// <param name="a">Scalar.</param>
-        /// <returns>The division of u times a.</returns>
-        public static Vector3 operator /(double a, Vector3 u)
-        {
-            return new Vector3(a * u.X, a * u.Y, a * u.Z);
-        }
-
-        /// <summary>
-        /// Divides a scalar with a vector.
-        /// </summary>
-        /// <param name="a">Scalar.</param>
-        /// <param name="u">Vector3.</param>
-        /// <returns>The division of u times a.</returns>
-        public static Vector3 Divide(double a, Vector3 u)
-        {
-            return new Vector3(a * u.X, a * u.Y, a * u.Z);
         }
 
         /// <summary>
@@ -608,8 +586,8 @@ namespace netDxf
         /// <summary>
         /// Divides two vectors component by component.
         /// </summary>
-        /// <param name="u">Vector2.</param>
-        /// <param name="v">Vector2.</param>
+        /// <param name="u">Vector3.</param>
+        /// <param name="v">Vector3.</param>
         /// <returns>The multiplication of u times v.</returns>
         public static Vector3 Divide(Vector3 u, Vector3 v)
         {
@@ -646,6 +624,8 @@ namespace netDxf
         /// <returns>Vector modulus.</returns>
         public double Modulus()
         {
+            if (this.isNormalized) return 1.0;
+
             return Math.Sqrt(DotProduct(this, this));
         }
 
